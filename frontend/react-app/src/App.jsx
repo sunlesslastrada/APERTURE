@@ -1,431 +1,591 @@
 
-import { useState } from 'react'
+import { useCallback, useEffect, useState } from "react";
 import {
   ShieldCheck,
   LayoutDashboard,
   ScanSearch,
-  FileSearch,
   History,
-  Bell,
-  Search,
   ShieldAlert,
   Activity,
-  Globe,
+  AlertTriangle,
+  CheckCircle2,
+  Clock3,
   ArrowUpRight,
-  LockKeyhole,
-  ChevronRight,
-  CircleDot,
-} from 'lucide-react'
+  Menu,
+  X,
+  TrendingUp,
+  Radar,
+} from "lucide-react";
+import ThreatAnalyzer from "./ThreatAnalyzer.jsx";
 
-import ThreatAnalyzer from './ThreatAnalyzer.jsx'
+const HISTORY_KEY = "trust-lens-history";
 
-const navigation = [
-  { label: 'Overview', icon: LayoutDashboard },
-  { label: 'Threat Analysis', icon: ScanSearch },
-  { label: 'File Integrity', icon: FileSearch },
-  { label: 'Incident Timeline', icon: History },
-]
+const NAV_ITEMS = [
+  { name: "Overview", icon: LayoutDashboard },
+  { name: "Threat Analysis", icon: ScanSearch },
+  { name: "Incident Timeline", icon: History },
+];
 
-function App() {
-  const [activeNav, setActiveNav] = useState('Overview')
-  const [url, setUrl] = useState('')
-  const [result, setResult] = useState(null)
-
-  function handleScan(event) {
-    event.preventDefault()
-
-    if (!url.trim()) {
-      setResult({
-        title: 'URL required',
-        detail: 'Enter a website address to continue.',
-        type: 'warning',
-      })
-      return
-    }
-
-    let parsed
-
-    try {
-      parsed = new URL(
-        /^[a-zA-Z][a-zA-Z\d+.-]*:/.test(url.trim())
-          ? url.trim()
-          : `https://${url.trim()}`
-      )
-    } catch {
-      setResult({
-        title: 'Invalid URL format',
-        detail: 'Check the address and try again.',
-        type: 'warning',
-      })
-      return
-    }
-
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      setResult({
-        title: 'Unsupported URL protocol',
-        detail: 'Enter an HTTP or HTTPS address.',
-        type: 'warning',
-      })
-      return
-    }
-
-    setResult({
-      title: 'Demo analysis completed',
-      detail: `${parsed.hostname} was accepted as input. No real threat analysis has been performed.`,
-      type: 'info',
-    })
+function readHistory() {
+  try {
+    const saved = localStorage.getItem(HISTORY_KEY);
+    const parsed = saved ? JSON.parse(saved) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
   }
+}
 
-  function renderWorkspacePage() {
-    if (activeNav === 'Threat Analysis') {
-      return <ThreatAnalyzer />
-    }
+function getVerdict(item) {
+  return String(item?.verdict || "UNKNOWN").toUpperCase();
+}
 
-    if (activeNav === 'File Integrity') {
-      return (
-        <section className="space-y-6">
-          <div>
-            <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-cyan-400/10 p-3 text-cyan-300">
-                <FileSearch size={23} />
-              </div>
-              <div>
-                <h3 className="text-xl font-semibold">
-                  File Integrity Monitor
-                </h3>
-                <p className="mt-1 text-sm text-zinc-400">
-                  Monitor file fingerprints and identify unexpected changes.
-                </p>
-              </div>
+function getScore(item) {
+  const score = Number(item?.threat_score ?? item?.score ?? 0);
+  return Number.isFinite(score) ? score : 0;
+}
+
+function getSender(item) {
+  return (
+    item?.sender_analysis?.sender_email ||
+    item?.sender ||
+    item?.input?.sender ||
+    item?.input?.url ||
+    item?.url ||
+    "Security analysis"
+  );
+}
+
+function getTimestamp(item) {
+  if (!item?.timestamp) return "Saved scan";
+  return String(item.timestamp);
+}
+
+function verdictStyle(verdict) {
+  switch (verdict) {
+    case "PHISHING":
+      return "border-red-500/20 bg-red-500/10 text-red-400";
+    case "SUSPICIOUS":
+      return "border-amber-500/20 bg-amber-500/10 text-amber-400";
+    case "SAFE":
+      return "border-emerald-500/20 bg-emerald-500/10 text-emerald-400";
+    default:
+      return "border-slate-700 bg-slate-800 text-slate-300";
+  }
+}
+
+function VerdictBadge({ verdict }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-3 py-1 text-xs font-semibold ${verdictStyle(
+        verdict
+      )}`}
+    >
+      {verdict}
+    </span>
+  );
+}
+
+function StatCard({ title, value, description, icon: Icon, color, tint }) {
+  return (
+    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 transition hover:border-slate-700">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-slate-400">{title}</p>
+          <p className="mt-3 text-3xl font-bold tracking-tight text-white">
+            {value}
+          </p>
+        </div>
+        <div className={`rounded-xl p-3 ${tint}`}>
+          <Icon size={22} className={color} />
+        </div>
+      </div>
+      <p className="mt-4 text-xs text-slate-500">{description}</p>
+    </div>
+  );
+}
+
+function IncidentRow({ item, index }) {
+  const verdict = getVerdict(item);
+
+  return (
+    <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <div className="rounded-xl bg-slate-800 p-2.5">
+          <ShieldAlert size={19} className="text-slate-300" />
+        </div>
+
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-slate-200">
+            {getSender(item)}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {getTimestamp(item)}
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-3 pl-1 sm:pl-0">
+        <VerdictBadge verdict={verdict} />
+        <span className="whitespace-nowrap text-sm text-slate-400">
+          {getScore(item)}/100
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function Overview({ history, onNavigate }) {
+  const total = history.length;
+
+  const phishing = history.filter(
+    (item) => getVerdict(item) === "PHISHING"
+  ).length;
+
+  const suspicious = history.filter(
+    (item) => getVerdict(item) === "SUSPICIOUS"
+  ).length;
+
+  const safe = history.filter(
+    (item) => getVerdict(item) === "SAFE"
+  ).length;
+
+  const activeIncidents = phishing + suspicious;
+
+  const stats = [
+    {
+      title: "Total Scanned",
+      value: total,
+      description: "Analyses saved in this browser",
+      icon: Activity,
+      color: "text-cyan-400",
+      tint: "bg-cyan-500/10",
+    },
+    {
+      title: "Phishing Detected",
+      value: phishing,
+      description: "Scans classified as phishing",
+      icon: ShieldAlert,
+      color: "text-red-400",
+      tint: "bg-red-500/10",
+    },
+    {
+      title: "Active Incidents",
+      value: activeIncidents,
+      description: "Suspicious or phishing results",
+      icon: AlertTriangle,
+      color: "text-amber-400",
+      tint: "bg-amber-500/10",
+    },
+    {
+      title: "Safe Results",
+      value: safe,
+      description: "Scans classified as safe",
+      icon: CheckCircle2,
+      color: "text-emerald-400",
+      tint: "bg-emerald-500/10",
+    },
+  ];
+
+  return (
+    <div className="space-y-8">
+      <section>
+        <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/5 px-3 py-1.5 text-xs font-medium text-cyan-400">
+          <Radar size={14} />
+          THREAT INTELLIGENCE CONSOLE
+        </div>
+
+        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          Security Overview
+        </h1>
+
+        <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
+          Detect phishing attempts, investigate suspicious links, and review
+          incident response recommendations from one security dashboard.
+        </p>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {stats.map((stat) => (
+          <StatCard key={stat.title} {...stat} />
+        ))}
+      </section>
+
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 xl:col-span-2">
+          <div className="flex items-start gap-4">
+            <div className="rounded-xl bg-cyan-500/10 p-3">
+              <ScanSearch size={25} className="text-cyan-400" />
             </div>
-          </div>
 
-          <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6 sm:p-8">
-            <div className="rounded-xl border border-dashed border-white/15 p-8 text-center">
-              <LockKeyhole
-                size={34}
-                className="mx-auto text-cyan-300"
-              />
-              <h4 className="mt-4 font-semibold">
-                File integrity workspace
-              </h4>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-400">
-                This workspace will help detect file modifications using
-                cryptographic hashes. File monitoring is not connected yet.
+            <div>
+              <h2 className="text-lg font-semibold text-white">
+                Multi-Vector Threat Analysis
+              </h2>
+              <p className="mt-2 text-sm leading-6 text-slate-400">
+                Inspect sender identity, psychological manipulation, and
+                suspicious URLs in a single analysis workflow.
               </p>
-              <span className="mt-5 inline-flex rounded-full border border-amber-400/20 bg-amber-400/5 px-3 py-1.5 text-xs text-amber-300">
-                Monitoring not connected
-              </span>
             </div>
           </div>
-        </section>
-      )
-    }
 
-    if (activeNav === 'Incident Timeline') {
-      return (
-        <section className="space-y-6">
+          <div className="mt-6 flex flex-wrap gap-2">
+            {["Sender Identity", "Content Analysis", "URL Inspection"].map(
+              (label) => (
+                <span
+                  key={label}
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300"
+                >
+                  {label}
+                </span>
+              )
+            )}
+          </div>
+
+          <button
+            onClick={() => onNavigate("Threat Analysis")}
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+          >
+            Run Security Triage
+            <ArrowUpRight size={17} />
+          </button>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
           <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-cyan-400/10 p-3 text-cyan-300">
-              <History size={23} />
+            <div className="rounded-xl bg-emerald-500/10 p-3">
+              <ShieldCheck size={24} className="text-emerald-400" />
             </div>
             <div>
-              <h3 className="text-xl font-semibold">Incident Timeline</h3>
-              <p className="mt-1 text-sm text-zinc-400">
-                Review security scans and incident response activity.
+              <h2 className="font-semibold text-white">Incident Response</h2>
+              <p className="mt-1 text-xs text-slate-500">
+                Detection and remediation
               </p>
             </div>
           </div>
 
-          <div className="rounded-2xl border border-white/10 bg-zinc-900/60 p-6 sm:p-8">
-            <div className="rounded-xl border border-dashed border-white/15 p-8 text-center">
-              <Activity size={34} className="mx-auto text-cyan-300" />
-              <h4 className="mt-4 font-semibold">No incidents recorded</h4>
-              <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-zinc-400">
-                Security events and remediation activity will appear here
-                when incident history is implemented.
-              </p>
-              <span className="mt-5 inline-flex rounded-full border border-amber-400/20 bg-amber-400/5 px-3 py-1.5 text-xs text-amber-300">
-                Waiting for scan history
-              </span>
-            </div>
-          </div>
-        </section>
-      )
-    }
+          <p className="mt-5 text-sm leading-6 text-slate-400">
+            Review suggested containment steps and prepare a technical
+            escalation draft when a scan identifies a potential threat.
+          </p>
 
-    return null
+          <button
+            onClick={() => onNavigate("Incident Timeline")}
+            className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-cyan-400 transition hover:text-cyan-300"
+          >
+            Review incidents
+            <ArrowUpRight size={16} />
+          </button>
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 sm:p-6">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-white">
+              Recent Analyses
+            </h2>
+            <p className="mt-1 text-sm text-slate-400">
+              Latest saved results from this browser
+            </p>
+          </div>
+
+          <button
+            onClick={() => onNavigate("Incident Timeline")}
+            className="text-sm font-medium text-cyan-400 hover:text-cyan-300"
+          >
+            View timeline
+          </button>
+        </div>
+
+        {history.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-700 px-5 py-10 text-center">
+            <Clock3
+              size={30}
+              className="mx-auto mb-3 text-slate-500"
+            />
+            <p className="font-medium text-slate-300">
+              No analyses recorded yet
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Run your first scan to populate dashboard metrics and history.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {history.slice(0, 5).map((item, index) => (
+              <IncidentRow
+                key={item.id || item.timestamp || index}
+                item={item}
+                index={index}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+
+      <p className="flex items-center gap-2 text-xs text-slate-500">
+        <TrendingUp size={14} />
+        Dashboard metrics are calculated from saved analysis results.
+      </p>
+    </div>
+  );
+}
+
+function IncidentTimeline({ history }) {
+  const threats = history.filter((item) =>
+    ["PHISHING", "SUSPICIOUS"].includes(getVerdict(item))
+  );
+
+  return (
+    <div className="space-y-6">
+      <section>
+        <p className="mb-2 text-xs font-semibold tracking-widest text-cyan-400">
+          AUDIT TRAIL
+        </p>
+        <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
+          Incident Timeline
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-slate-400">
+          Review recorded scans and investigate results that were classified
+          as suspicious or phishing.
+        </p>
+      </section>
+
+      <section className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <StatCard
+          title="Recorded Scans"
+          value={history.length}
+          description="All saved analyses"
+          icon={History}
+          color="text-cyan-400"
+          tint="bg-cyan-500/10"
+        />
+        <StatCard
+          title="Potential Incidents"
+          value={threats.length}
+          description="Suspicious and phishing results"
+          icon={AlertTriangle}
+          color="text-amber-400"
+          tint="bg-amber-500/10"
+        />
+        <StatCard
+          title="Safe Results"
+          value={history.filter(
+            (item) => getVerdict(item) === "SAFE"
+          ).length}
+          description="Results marked safe"
+          icon={CheckCircle2}
+          color="text-emerald-400"
+          tint="bg-emerald-500/10"
+        />
+      </section>
+
+      <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 sm:p-6">
+        <h2 className="mb-5 font-semibold text-white">
+          Chronological Activity
+        </h2>
+
+        {history.length === 0 ? (
+          <div className="rounded-xl border border-dashed border-slate-700 px-5 py-12 text-center">
+            <History
+              size={30}
+              className="mx-auto mb-3 text-slate-500"
+            />
+            <p className="font-medium text-slate-300">
+              Your timeline is empty
+            </p>
+            <p className="mt-2 text-sm text-slate-500">
+              Saved analysis results will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {history.map((item, index) => (
+              <IncidentRow
+                key={item.id || item.timestamp || index}
+                item={item}
+                index={index}
+              />
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+export default function App() {
+  const [activeNav, setActiveNav] = useState("Overview");
+  const [history, setHistory] = useState(readHistory);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const refreshHistory = useCallback(() => {
+    setHistory(readHistory());
+  }, []);
+
+  useEffect(() => {
+    window.addEventListener("storage", refreshHistory);
+    window.addEventListener("focus", refreshHistory);
+
+    // Refresh when another part of this app dispatches a history update.
+    window.addEventListener("trust-lens-history-updated", refreshHistory);
+
+    return () => {
+      window.removeEventListener("storage", refreshHistory);
+      window.removeEventListener("focus", refreshHistory);
+      window.removeEventListener(
+        "trust-lens-history-updated",
+        refreshHistory
+      );
+    };
+  }, [refreshHistory]);
+
+  function navigate(page) {
+    setActiveNav(page);
+    setMenuOpen(false);
   }
 
   return (
-    <div className="min-h-screen bg-zinc-950 text-zinc-100">
-      {/* Sidebar */}
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r border-white/10 bg-zinc-950 p-5 lg:flex lg:flex-col">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-cyan-400/10 p-2.5 text-cyan-300">
-            <ShieldCheck size={25} />
+    <div className="min-h-screen bg-slate-950 text-slate-100">
+      <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-800 bg-slate-950 lg:flex">
+        <div className="flex h-20 items-center gap-3 border-b border-slate-800 px-6">
+          <div className="rounded-xl bg-cyan-500/10 p-2">
+            <ShieldCheck size={28} className="text-cyan-400" />
           </div>
           <div>
-            <h1 className="text-xl font-bold tracking-[0.2em]">
+            <p className="text-lg font-bold tracking-wide text-white">
               Trust Lens
-            </h1>
-            <p className="text-[10px] tracking-[0.22em] text-zinc-500">
-              THREAT INTELLIGENCE
+            </p>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Threat Intelligence
             </p>
           </div>
         </div>
 
-        <div className="mt-12">
-          <p className="mb-3 px-3 text-[10px] font-semibold tracking-[0.2em] text-zinc-600">
-            WORKSPACE
+        <nav className="flex-1 space-y-2 p-4">
+          <p className="mb-4 px-3 text-xs font-semibold uppercase tracking-widest text-slate-600">
+            Workspace
           </p>
 
-          <nav className="space-y-1">
-            {navigation.map(({ label, icon: Icon }) => (
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const selected = activeNav === item.name;
+
+            return (
               <button
-                key={label}
-                type="button"
-                onClick={() => setActiveNav(label)}
-                aria-current={activeNav === label ? 'page' : undefined}
-                className={`flex w-full items-center gap-3 rounded-xl border px-3 py-3 text-left text-sm transition ${
-                  activeNav === label
-                    ? 'border-cyan-400/20 bg-cyan-400/10 text-cyan-300'
-                    : 'border-transparent text-zinc-400 hover:bg-white/5 hover:text-white'
+                key={item.name}
+                onClick={() => navigate(item.name)}
+                className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-left text-sm font-medium transition ${
+                  selected
+                    ? "border border-cyan-500/20 bg-cyan-500/10 text-cyan-300"
+                    : "border border-transparent text-slate-400 hover:bg-slate-900 hover:text-white"
                 }`}
               >
-                <Icon size={18} />
-                <span>{label}</span>
-                {activeNav === label && (
-                  <ChevronRight className="ml-auto" size={16} />
-                )}
+                <Icon size={19} />
+                {item.name}
               </button>
-            ))}
-          </nav>
-        </div>
+            );
+          })}
+        </nav>
 
-        <div className="mt-auto rounded-2xl border border-white/10 bg-zinc-900/70 p-4">
-          <div className="flex items-center gap-2 text-xs font-medium text-emerald-400">
-            <CircleDot size={14} />
-            Frontend demo mode
+        <div className="border-t border-slate-800 p-5">
+          <div className="flex items-center gap-2 text-xs text-slate-400">
+            <span className="h-2 w-2 rounded-full bg-amber-400" />
+            Frontend integration
           </div>
-          <p className="mt-2 text-xs leading-5 text-zinc-500">
-            AI analysis and backend connectivity have not been enabled yet.
+          <p className="mt-2 text-xs leading-5 text-slate-600">
+            Results depend on the configured mock or backend analysis source.
           </p>
         </div>
       </aside>
 
-      {/* Main workspace */}
-      <main className="min-h-screen lg:ml-64">
-        <header className="flex items-center justify-between border-b border-white/10 px-5 py-5 sm:px-8">
-          <div>
-            <p className="text-xs text-zinc-500">
-              Security Operations / Workspace
-            </p>
-            <h2 className="mt-1 text-lg font-semibold">{activeNav}</h2>
+      {menuOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950 lg:hidden">
+          <div className="flex h-20 items-center justify-between border-b border-slate-800 px-5">
+            <div className="flex items-center gap-3">
+              <ShieldCheck size={27} className="text-cyan-400" />
+              <span className="font-bold text-white">Trust Lens</span>
+            </div>
+            <button
+              onClick={() => setMenuOpen(false)}
+              aria-label="Close navigation"
+              className="rounded-lg p-2 text-slate-300 hover:bg-slate-800"
+            >
+              <X size={22} />
+            </button>
           </div>
 
+          <nav className="space-y-2 p-4">
+            {NAV_ITEMS.map((item) => {
+              const Icon = item.icon;
+
+              return (
+                <button
+                  key={item.name}
+                  onClick={() => navigate(item.name)}
+                  className={`flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm ${
+                    activeNav === item.name
+                      ? "bg-cyan-500/10 text-cyan-300"
+                      : "text-slate-300 hover:bg-slate-900"
+                  }`}
+                >
+                  <Icon size={19} />
+                  {item.name}
+                </button>
+              );
+            })}
+          </nav>
+        </div>
+      )}
+
+      <div className="lg:pl-64">
+        <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-slate-800 bg-slate-950/90 px-5 backdrop-blur sm:px-8">
           <div className="flex items-center gap-3">
-            <span className="hidden rounded-full border border-amber-400/20 bg-amber-400/10 px-3 py-1.5 text-xs text-amber-300 sm:inline-flex">
-              DEMO ENVIRONMENT
-            </span>
             <button
-              type="button"
-              aria-label="Notifications"
-              className="rounded-xl border border-white/10 p-2.5 text-zinc-400 hover:text-white"
+              onClick={() => setMenuOpen(true)}
+              aria-label="Open navigation"
+              className="rounded-lg p-2 text-slate-300 hover:bg-slate-800 lg:hidden"
             >
-              <Bell size={18} />
+              <Menu size={22} />
             </button>
-            <div className="flex h-9 w-9 items-center justify-center rounded-full bg-cyan-400/15 text-sm font-semibold text-cyan-300">
-              T
+
+            <div>
+              <p className="text-sm font-semibold text-white">
+                {activeNav}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Trust Lens / {activeNav}
+              </p>
             </div>
+          </div>
+
+          <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900 px-3 py-2">
+            <span className="h-2 w-2 rounded-full bg-cyan-400" />
+            <span className="text-xs font-medium text-slate-300">
+              Demo Mode
+            </span>
           </div>
         </header>
 
-        <div className="mx-auto max-w-7xl space-y-7 p-5 sm:p-8">
-          {activeNav === 'Overview' ? (
-            <>
-              {/* Welcome banner */}
-              <section className="relative overflow-hidden rounded-3xl border border-cyan-400/15 bg-gradient-to-br from-cyan-950/70 via-zinc-900 to-zinc-950 p-6 sm:p-9">
-                <div className="pointer-events-none absolute -right-12 -top-20 h-64 w-64 rounded-full bg-cyan-400/10 blur-3xl" />
-
-                <div className="relative max-w-2xl">
-                  <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1.5 text-xs text-cyan-300">
-                    <Activity size={14} />
-                    SECURITY INTELLIGENCE CONSOLE
-                  </div>
-
-                  <h3 className="text-3xl font-semibold leading-tight tracking-tight sm:text-4xl">
-                    See beyond the
-                    <span className="text-cyan-300"> threat.</span>
-                  </h3>
-
-                  <p className="mt-3 max-w-xl text-sm leading-6 text-zinc-400 sm:text-base">
-                    A unified workspace for phishing analysis, domain
-                    inspection, and incident response.
-                  </p>
-
-                  <button
-                    type="button"
-                    onClick={() => setActiveNav('Threat Analysis')}
-                    className="mt-6 inline-flex items-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 transition hover:bg-cyan-200"
-                  >
-                    Open threat console <ArrowUpRight size={17} />
-                  </button>
-                </div>
-              </section>
-
-              {/* Dashboard metrics */}
-              <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {[
-                  {
-                    label: 'Total Scanned',
-                    value: '0',
-                    note: 'No scan history recorded',
-                    icon: Search,
-                    color: 'text-cyan-300',
-                  },
-                  {
-                    label: 'Threats Neutralized',
-                    value: '0',
-                    note: 'No remediation actions recorded',
-                    icon: ShieldCheck,
-                    color: 'text-emerald-400',
-                  },
-                  {
-                    label: 'Active Incidents',
-                    value: '0',
-                    note: 'No real incident feed connected',
-                    icon: ShieldAlert,
-                    color: 'text-amber-300',
-                  },
-                ].map((stat) => (
-                  <article
-                    key={stat.label}
-                    className="rounded-2xl border border-white/10 bg-zinc-900/60 p-5"
-                  >
-                    <div className="flex items-start justify-between">
-                      <p className="text-sm text-zinc-400">{stat.label}</p>
-                      <stat.icon className={stat.color} size={19} />
-                    </div>
-                    <p className="mt-5 text-3xl font-semibold">
-                      {stat.value}
-                    </p>
-                    <p className="mt-2 text-xs text-zinc-500">
-                      {stat.note}
-                    </p>
-                  </article>
-                ))}
-              </section>
-
-              {/* Quick URL check and intelligence status */}
-              <section className="grid items-start gap-5 xl:grid-cols-[1.4fr_0.8fr]">
-                <article className="rounded-2xl border border-white/10 bg-zinc-900/60 p-5 sm:p-7">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-cyan-400/10 p-2.5 text-cyan-300">
-                      <Globe size={20} />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold">Quick URL Check</h3>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        Enter a URL to try the interface
-                      </p>
-                    </div>
-                  </div>
-
-                  <form onSubmit={handleScan} className="mt-6 space-y-3">
-                    <label
-                      htmlFor="url-input"
-                      className="text-xs text-zinc-400"
-                    >
-                      Website address
-                    </label>
-                    <div className="flex flex-col gap-3 sm:flex-row">
-                      <input
-                        id="url-input"
-                        type="text"
-                        value={url}
-                        onChange={(event) => setUrl(event.target.value)}
-                        placeholder="https://example.com"
-                        className="min-w-0 flex-1 rounded-xl border border-white/10 bg-zinc-950 px-4 py-3 text-sm outline-none placeholder:text-zinc-600 focus:border-cyan-400/60"
-                      />
-                      <button
-                        type="submit"
-                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-cyan-300 px-5 py-3 text-sm font-semibold text-zinc-950 hover:bg-cyan-200"
-                      >
-                        <ScanSearch size={17} /> Test URL
-                      </button>
-                    </div>
-                  </form>
-
-                  {result && (
-                    <div
-                      role="status"
-                      className={`mt-5 rounded-xl border p-4 ${
-                        result.type === 'warning'
-                          ? 'border-amber-400/20 bg-amber-400/5'
-                          : 'border-cyan-400/20 bg-cyan-400/5'
-                      }`}
-                    >
-                      <p className="text-sm font-semibold">{result.title}</p>
-                      <p className="mt-1 break-words text-sm leading-6 text-zinc-400">
-                        {result.detail}
-                      </p>
-                    </div>
-                  )}
-
-                  <p className="mt-4 text-xs leading-5 text-zinc-500">
-                    Demo only: this form does not contact an AI model or
-                    verify whether a website is safe.
-                  </p>
-                </article>
-
-                <article className="rounded-2xl border border-white/10 bg-zinc-900/60 p-5 sm:p-7">
-                  <div className="flex items-center gap-3">
-                    <div className="rounded-xl bg-emerald-400/10 p-2.5 text-emerald-400">
-                      <LockKeyhole size={20} />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold">Threat Intelligence</h3>
-                      <p className="mt-1 text-xs text-zinc-500">
-                        Analysis status
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-6 rounded-xl border border-white/10 bg-zinc-950/70 p-5 text-center">
-                    <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full border-4 border-zinc-800">
-                      <span className="text-2xl font-semibold text-zinc-500">
-                        —
-                      </span>
-                    </div>
-                    <p className="mt-4 font-medium">
-                      Awaiting analysis engine
-                    </p>
-                    <p className="mt-2 text-xs leading-5 text-zinc-500">
-                      Verdict and threat score will appear here after backend
-                      integration.
-                    </p>
-                  </div>
-
-                  <div className="mt-4 flex items-center gap-2 text-xs text-amber-300">
-                    <CircleDot size={13} />
-                    AI engine not connected
-                  </div>
-                </article>
-              </section>
-
-              <footer className="border-t border-white/10 py-5 text-center text-xs text-zinc-600">
-                Trust Lens · Threat Intelligence Workspace · Development
-                Preview
-              </footer>
-            </>
-          ) : (
-            renderWorkspacePage()
+        <main className="mx-auto max-w-[1600px] p-5 sm:p-8">
+          {activeNav === "Overview" && (
+            <Overview history={history} onNavigate={navigate} />
           )}
-        </div>
-      </main>
-    </div>
-  )
-}
 
-export default App
+          {activeNav === "Threat Analysis" && (
+            <ThreatAnalyzer />
+          )}
+
+          {activeNav === "Incident Timeline" && (
+            <IncidentTimeline history={history} />
+          )}
+        </main>
+
+        <footer className="border-t border-slate-800 px-5 py-5 text-center text-xs text-slate-600 sm:px-8">
+          Trust Lens · Threat Intelligence & Incident Response
+        </footer>
+      </div>
+    </div>
+  );
+}

@@ -1,0 +1,38 @@
+
+{
+  "verdict": "PHISHING",
+  "threat_score": 92,
+  "sender_analysis": {
+    "sender_email": "security-alerts@gmail.com",
+    "display_name_match": false,
+    "domain_reputation_notes": "The sender uses a consumer email provider while claiming to represent a major technology company. Sender ownership has not been independently verified.",
+    "is_spoofed": true
+  },
+  "content_analysis": {
+    "urgency_tactics_detected": true,
+    "psychological_triggers": [
+      "Artificial urgency",
+      "Threat of account suspension",
+      "Fear of losing account access"
+    ],
+    "sentiment_analysis": "Pressuring and threatening language encourages the recipient to act without verification."
+  },
+  "url_analysis": {
+    "extracted_urls": [
+      "http://micros0ft-account-security.example.com/verify"
+    ],
+    "has_typosquatting": true,
+    "suspicious_redirects": false,
+    "domain_risk_summary": "The hostname contains a zero in place of the letter o in a brand-like name. This is suspicious, but does not prove that the destination is malicious."
+  },
+  "playbook": {
+    "immediate_actions": [
+      "Do not open the link or provide credentials.",
+      "Verify the message through the company's official website or a trusted contact.",
+      "If credentials were entered, change them through the official website and review active sessions.",
+      "Report the message to the security team for investigation."
+    ],
+    "admin_alert_draft": "DEMO INCIDENT: A suspected phishing message impersonating a technology company was identified. Sender: security-alerts@gmail.com. Potential lookalike URL detected. Verify indicators using approved security tools before taking containment action.",
+    "severity_level": "HIGH"
+  }
+}
