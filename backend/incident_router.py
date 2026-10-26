@@ -35,7 +35,7 @@ async def health_check():
     is_live = bool(api_key and api_key != "your_gemini_api_key_here")
     return {
         "status": "online",
-        "service": "TrustLens AI - Incident Responder (Feature 2)",
+        "service": "APERTURE - Incident Responder (Feature 2)",
         "ai_engine": "Gemini 2.5 Flash (Live)" if is_live else "Rule-Based Fallback Engine (Demo Safe)",
         "version": "1.0.0"
     }

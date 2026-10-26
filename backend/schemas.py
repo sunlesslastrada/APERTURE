@@ -1,6 +1,15 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional
 
+# --- Incoming Analysis Payload ---
+
+class AnalyzePayload(BaseModel):
+    mode: str = "message"  # "message" or "url"
+    sender: Optional[str] = ""
+    message: Optional[str] = ""
+    url: Optional[str] = ""
+
+
 # --- Feature 1 Diagnostic Contracts ---
 
 class SenderCheck(BaseModel):

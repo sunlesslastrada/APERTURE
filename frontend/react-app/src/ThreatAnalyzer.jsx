@@ -1,4 +1,3 @@
-
 import { useState } from "react";
 import {
   AlertTriangle,
@@ -10,14 +9,13 @@ import {
   Mail,
   Copy,
   ClipboardCheck,
-  CircleHelp,
   LoaderCircle,
   ExternalLink,
   RefreshCw,
   FileSearch,
   Eye,
+  Radio,
 } from "lucide-react";
-import mockThreatAnalysis from "./mocks/threatAnalysis.json";
 
 const HISTORY_KEY = "trust-lens-history";
 
@@ -157,7 +155,7 @@ export default function ThreatAnalyzer() {
     setCopied(false);
   }
 
-  function runAnalysis(event) {
+  async function runAnalysis(event) {
     event.preventDefault();
     setError("");
     setCopied(false);
@@ -180,25 +178,59 @@ export default function ThreatAnalyzer() {
     setLoading(true);
     setCheckedActions({});
 
-    // DEMO: use a local JSON fixture until the FastAPI endpoint is connected.
-    // This response is illustrative and does not analyze the entered content.
-    window.setTimeout(() => {
-      const input = mode === "message"
-        ? { mode, sender: sender.trim(), message: message.trim() }
-        : { mode, url: url.trim() };
+    const payload = {
+      mode,
+      sender: mode === "message" ? sender.trim() : "",
+      message: mode === "message" ? message.trim() : "",
+      url: mode === "url" ? url.trim() : "",
+    };
+
+    try {
+      const response = await fetch("http://localhost:8000/api/analyze", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.detail || `Server responded with status ${response.status}`);
+      }
+
+      const data = await response.json();
 
       const record = {
-        ...mockThreatAnalysis,
-        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        id: `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`,
         timestamp: new Date().toLocaleString(),
-        input,
-        demo: true,
+        verdict: data.verdict,
+        threat_score: data.threat_score,
+        input: {
+          mode,
+          sender: mode === "message" ? sender.trim() : "",
+          message: mode === "message" ? message.trim() : "",
+          url: mode === "url" ? url.trim() : "",
+        },
+        sender_analysis: data.sender_analysis,
+        content_analysis: data.content_analysis,
+        url_analysis: data.url_analysis,
+        playbook: data.playbook,
       };
 
       setResult(record);
       saveHistory(record);
+    } catch (err) {
+      console.error("Threat analysis request failed:", err);
+      setError(
+        `Analysis failed: ${
+          err.message ||
+          "Could not connect to the APERTURE intelligence backend at http://localhost:8000. Ensure the API server is running."
+        }`
+      );
+    } finally {
       setLoading(false);
-    }, 650);
+    }
   }
 
   function toggleAction(index) {
@@ -212,7 +244,7 @@ export default function ThreatAnalyzer() {
     if (!result) return;
 
     const draft = [
-      "TRUST LENS — SECURITY INCIDENT ESCALATION",
+      "APERTURE — SECURITY INCIDENT ESCALATION",
       `Timestamp: ${result.timestamp}`,
       `Verdict: ${result.verdict}`,
       `Threat score: ${result.threat_score}/100`,
@@ -238,8 +270,6 @@ export default function ThreatAnalyzer() {
       "",
       "Incident summary:",
       result.playbook.admin_alert_draft,
-      "",
-      "DEMO NOTE: This report was generated from a local mock response. Verify all indicators before acting.",
     ].join("\n");
 
     try {
@@ -271,9 +301,9 @@ export default function ThreatAnalyzer() {
               social-engineering language, and domain risk indicators.
             </p>
           </div>
-          <span className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs font-medium text-amber-300">
-            <CircleHelp size={15} />
-            Mock data mode
+          <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs font-medium text-cyan-300">
+            <Radio size={14} className="animate-pulse text-cyan-400" />
+            Live Triage Active
           </span>
         </div>
       </section>
@@ -327,7 +357,7 @@ export default function ThreatAnalyzer() {
                   id="sender-email"
                   value={sender}
                   onChange={(event) => setSender(event.target.value)}
-                  placeholder="e.g. support@example.com"
+                  placeholder="e.g. Microsoft Support <security-alerts@gmail.com>"
                   className="w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
                 />
               </div>
@@ -393,13 +423,13 @@ export default function ThreatAnalyzer() {
                 </button>
               </div>
               <p className="mt-3 text-xs text-slate-500">
-                This demo uses a predefined JSON response. It does not visit the URL or verify the live website.
+                Bare URL mode evaluates domain reputation, typosquats, character homoglyphs, and deceptive subdomains.
               </p>
             </div>
           )}
 
           {error && (
-            <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/5 px-4 py-3 text-sm text-red-300">
+            <div role="alert" className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
               {error}
             </div>
           )}
@@ -413,12 +443,12 @@ export default function ThreatAnalyzer() {
               {loading ? (
                 <>
                   <LoaderCircle size={17} className="animate-spin" />
-                  Running demo...
+                  Running Security Triage...
                 </>
               ) : (
                 <>
                   <ScanSearch size={17} />
-                  Run Security Check
+                  Run Security Triage
                 </>
               )}
             </button>
@@ -443,10 +473,10 @@ export default function ThreatAnalyzer() {
                 ANALYSIS REPORT
               </p>
               <h2 className="mt-2 text-2xl font-bold text-white">
-                Threat Intelligence Results
+                Live Threat Intelligence Results
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                Demo result · {result.timestamp}
+                APERTURE Triage · {result.timestamp}
               </p>
             </div>
             <button
@@ -478,10 +508,10 @@ export default function ThreatAnalyzer() {
 
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
                   {verdict === "PHISHING"
-                    ? "The sample response identifies multiple phishing indicators. Treat this as a demonstration, not a live verdict on your submitted content."
+                    ? "Multiple malicious indicators identified across identity, context, or destination vectors. Immediate containment is advised."
                     : verdict === "SUSPICIOUS"
-                    ? "The sample response indicates suspicious signals that warrant further verification."
-                    : "The sample response is marked safe. This does not guarantee that a real message or URL is safe."}
+                    ? "Suspicious signals detected that warrant scrutiny and secondary channel verification before interacting."
+                    : "Payload evaluated as safe. No malicious identity spoofing, psychological manipulation, or suspicious URLs detected."}
                 </p>
               </div>
 
@@ -514,14 +544,10 @@ export default function ThreatAnalyzer() {
                     Threat score
                   </p>
                   <p className="mt-1 max-w-32 text-xs leading-5 text-slate-400">
-                    Supplied by the current mock response
+                    Quantified by APERTURE Intelligence Engine
                   </p>
                 </div>
               </div>
-            </div>
-
-            <div className="mt-6 rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-xs leading-5 text-amber-200">
-              Demo limitation: this report currently displays a fixed mock response. Your submitted content is saved as scan metadata, but is not analyzed by an AI model yet.
             </div>
           </section>
 
@@ -645,7 +671,7 @@ export default function ThreatAnalyzer() {
                 <SectionHeading
                   icon={ClipboardCheck}
                   title="Incident Responder"
-                  description="Review recommended actions and track your checklist progress."
+                  description="Review prioritized containment actions and monitor remediation checklist."
                   color="text-amber-400"
                 />
                 <span className="rounded-full border border-amber-500/20 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300">
@@ -705,11 +731,11 @@ export default function ThreatAnalyzer() {
                     SOC / IT Escalation Draft
                   </h3>
                   <p className="mt-1 text-sm text-slate-400">
-                    Copy the structured summary for review by your security team.
+                    Pre-composed Tier-3 incident escalation report ready for one-click copy.
                   </p>
                 </div>
 
-                <div className="whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm leading-6 text-slate-300">
+                <div className="whitespace-pre-wrap rounded-xl border border-slate-800 bg-slate-950 p-4 text-sm leading-6 text-slate-300 font-mono">
                   {result.playbook.admin_alert_draft}
                 </div>
 
@@ -726,9 +752,8 @@ export default function ThreatAnalyzer() {
           )}
 
           <p className="text-xs leading-5 text-slate-500">
-            <ShieldCheck size={14} className="mr-1 inline-block" />
-            Results and recommendations shown here are illustrative mock data.
-            Verify security indicators using approved tools before taking action.
+            <ShieldCheck size={14} className="mr-1 inline-block text-cyan-400" />
+            Triage results generated by APERTURE automated threat intelligence engine.
           </p>
         </>
       )}

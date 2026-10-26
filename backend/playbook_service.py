@@ -31,10 +31,10 @@ def generate_rule_based_fallback(
 ) -> IncidentPlaybook:
     """
     Guaranteed fallback engine: Executes if Gemini API key is missing or throttled.
-    Ensures TrustLens AI never throws a 500 error during a live presentation.
+    Ensures APERTURE never throws a 500 error during a live presentation.
     """
     severity = calculate_severity(threat_score)
-    incident_id = f"TL-{uuid.uuid4().hex[:8].upper()}"
+    incident_id = f"AP-{uuid.uuid4().hex[:8].upper()}"
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
     # If SAFE verdict
@@ -47,7 +47,7 @@ def generate_rule_based_fallback(
                 "Report any unexpected follow-up communications requesting sensitive data."
             ],
             admin_alert_draft=(
-                f"### [INFORMATIONAL] TrustLens Threat Scan Log\n"
+                f"### [INFORMATIONAL] APERTURE Threat Scan Log\n"
                 f"- **Incident ID:** {incident_id}\n"
                 f"- **Timestamp:** {timestamp}\n"
                 f"- **Verdict:** SAFE (Threat Score: {threat_score}/100)\n"
@@ -81,7 +81,7 @@ def generate_rule_based_fallback(
     triggers_str = ", ".join(psychological_triggers) if psychological_triggers else "Social engineering urgency tactics"
     urls_str = ", ".join(f"`{u}`" for u in flagged_urls) if flagged_urls else "`None identified`"
 
-    soc_report = f"""### 🚨 TrustLens AI — Automated Incident Escalation Briefing
+    soc_report = f"""### 🚨 APERTURE — Automated Incident Escalation Briefing
 **Incident ID:** `{incident_id}`  
 **Timestamp:** `{timestamp}`  
 **Triage Severity:** **{severity}** (Global Threat Score: **{threat_score}/100**)  
@@ -103,7 +103,7 @@ def generate_rule_based_fallback(
 3. Domain blacklisting request generated for Perimeter SOC.
 
 ---
-*Report auto-compiled by TrustLens AI Incident Responder Engine.*
+*Report auto-compiled by APERTURE Incident Responder Engine.*
 """
 
     return IncidentPlaybook(
@@ -141,7 +141,7 @@ def generate_playbook_with_gemini(
         client = genai.Client(api_key=api_key)
 
         prompt = f"""
-You are the autonomous Tier-3 Incident Commander for TrustLens AI.
+You are the autonomous Tier-3 Incident Commander for APERTURE.
 Analyze the following threat triage data and generate an actionable IncidentPlaybook.
 
 THREAT CONTEXT:
