@@ -418,7 +418,7 @@ export default function ThreatAnalyzer() {
               ) : (
                 <>
                   <ScanSearch size={17} />
-                  Run Security Triage
+                  Run Security Check
                 </>
               )}
             </button>
