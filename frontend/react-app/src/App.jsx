@@ -20,9 +20,14 @@ import {
   Link2,
   Tag,
   Radio,
+  KeyRound,
+  Globe,
+  Banknote,
+  Bug,
 } from "lucide-react";
 import MessageDeepScan from "./MessageDeepScan.jsx";
 import DomainSentinel from "./DomainSentinel.jsx";
+import ApertureLogo from "./ApertureLogo.jsx";
 
 const HISTORY_KEY = "aperture-threat-history";
 const LEGACY_HISTORY_KEY = "trust-lens-history";
@@ -139,16 +144,79 @@ function StatCard({
   );
 }
 
+function IncidentBadge({ item }) {
+  const score = getScore(item);
+  const verdict = getVerdict(item);
+  const archetype = String(
+    item?.threat_archetype || item?.playbook?.threat_archetype || ""
+  ).toUpperCase();
+
+  // 1. Severity-Driven Colors & Glow
+  let badgeStyle =
+    "bg-emerald-950/60 text-emerald-400 border border-emerald-500/30 shadow-[0_0_12px_rgba(16,185,129,0.15)]";
+  let scoreBadgeStyle =
+    "bg-emerald-500/10 text-emerald-300 border-emerald-500/30";
+
+  if (score >= 70 || verdict === "PHISHING") {
+    badgeStyle =
+      "bg-rose-950/60 text-rose-400 border border-rose-500/30 shadow-[0_0_12px_rgba(244,63,94,0.15)]";
+    scoreBadgeStyle = "bg-rose-500/10 text-rose-300 border-rose-500/30";
+  } else if (score >= 40 || verdict === "SUSPICIOUS") {
+    badgeStyle =
+      "bg-amber-950/60 text-amber-400 border border-amber-500/30 shadow-[0_0_12px_rgba(245,158,11,0.15)]";
+    scoreBadgeStyle = "bg-amber-500/10 text-amber-300 border-amber-500/30";
+  }
+
+  // 2. Archetype-Specific Lucide Icons
+  function renderArchetypeIcon() {
+    if (archetype.includes("CREDENTIAL")) {
+      return <KeyRound className="w-4 h-4" />;
+    }
+    if (archetype.includes("TYPOSQUAT") || archetype.includes("BRAND")) {
+      return <Globe className="w-4 h-4" />;
+    }
+    if (
+      archetype.includes("FINANCIAL") ||
+      archetype.includes("FRAUD") ||
+      archetype.includes("BEC")
+    ) {
+      return <Banknote className="w-4 h-4" />;
+    }
+    if (archetype.includes("MALWARE")) {
+      return <Bug className="w-4 h-4" />;
+    }
+    if (score < 40 || verdict === "SAFE") {
+      return <ShieldCheck className="w-4 h-4" />;
+    }
+    return <ShieldAlert className="w-4 h-4" />;
+  }
+
+  return (
+    <div className="flex items-center gap-2 shrink-0">
+      <div
+        className={`relative flex items-center justify-center rounded-xl p-2.5 transition-all ${badgeStyle}`}
+        title={`Threat Vector: ${archetype || "Evaluated Vector"}`}
+      >
+        {renderArchetypeIcon()}
+      </div>
+      <div
+        className={`flex items-center justify-center rounded-md border px-2 py-0.5 font-mono text-xs font-bold tracking-tight ${scoreBadgeStyle}`}
+        title={`Threat Score: ${score}/100`}
+      >
+        {score}
+      </div>
+    </div>
+  );
+}
+
 function IncidentRow({ item }) {
   const verdict = getVerdict(item);
   const archetype = item?.threat_archetype || item?.playbook?.threat_archetype;
 
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
+    <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 transition hover:border-slate-700/80 sm:flex-row sm:items-center sm:justify-between">
       <div className="flex min-w-0 items-center gap-3">
-        <div className="rounded-xl bg-slate-800 p-2.5">
-          <ShieldAlert size={19} className="text-slate-300" />
-        </div>
+        <IncidentBadge item={item} />
 
         <div className="min-w-0">
           <p className="break-all text-sm font-medium text-slate-200">
@@ -167,9 +235,6 @@ function IncidentRow({ item }) {
           </span>
         )}
         <VerdictBadge verdict={verdict} />
-        <span className="whitespace-nowrap text-sm text-slate-400 font-mono">
-          {getScore(item)}/100
-        </span>
       </div>
     </div>
   );
@@ -649,17 +714,15 @@ export default function App() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       {/* Sidebar Navigation */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-800 bg-slate-950 lg:flex">
-        <div className="flex h-20 items-center gap-3 border-b border-slate-800 px-6">
-          <div className="rounded-xl bg-cyan-500/10 p-2">
-            <ShieldCheck size={28} className="text-cyan-400" />
-          </div>
+        <div className="flex h-20 items-center gap-3.5 border-b border-slate-800 px-6">
+          <ApertureLogo className="w-10 h-10" />
 
           <div>
-            <p className="text-lg font-bold tracking-wide text-white">
+            <p className="text-lg font-bold tracking-wider text-white">
               APERTURE
             </p>
-            <p className="mt-0.5 text-xs text-slate-500">
-              Threat Intelligence
+            <p className="text-[10px] tracking-widest text-cyan-400/80 font-medium uppercase">
+              Threat Intelligence & Remediation
             </p>
           </div>
         </div>
@@ -707,8 +770,13 @@ export default function App() {
         <div className="fixed inset-0 z-50 bg-slate-950 lg:hidden">
           <div className="flex h-20 items-center justify-between border-b border-slate-800 px-5">
             <div className="flex items-center gap-3">
-              <ShieldCheck size={27} className="text-cyan-400" />
-              <span className="font-bold text-white">APERTURE</span>
+              <ApertureLogo className="w-9 h-9" />
+              <div>
+                <span className="font-bold tracking-wider text-white text-base">APERTURE</span>
+                <p className="text-[9px] tracking-widest text-cyan-400/80 font-medium uppercase">
+                  Threat Intelligence & Remediation
+                </p>
+              </div>
             </div>
 
             <button
