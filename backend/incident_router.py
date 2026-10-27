@@ -21,7 +21,8 @@ async def create_incident_playbook(request: PlaybookRequest):
             urgency_detected=request.urgency_detected,
             psychological_triggers=request.psychological_triggers,
             flagged_urls=request.flagged_urls,
-            raw_snippet=request.raw_snippet
+            raw_snippet=request.raw_snippet,
+            threat_archetype=request.threat_archetype
         )
         return playbook
     except Exception as e:

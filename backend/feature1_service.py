@@ -102,7 +102,7 @@ def analyze_heuristics_fallback(payload: AnalyzePayload) -> ThreatAnalysisRespon
     display_lower = display_name.lower()
     impersonated_brand = None
     for brand in BRAND_KEYWORDS:
-        if brand in display_lower:
+        if brand in display_lower or brand in sender_domain or brand in sender_email.lower():
             impersonated_brand = brand
             break
 
@@ -112,18 +112,19 @@ def analyze_heuristics_fallback(payload: AnalyzePayload) -> ThreatAnalysisRespon
             display_name_match = False
             sender_weight = 35  # High-risk consumer webmail impersonating enterprise brand
             domain_reputation_notes = (
-                f"Direct Sender Impersonation (MITRE T1656): Display name claims enterprise entity '{display_name}', "
+                f"Direct Sender Impersonation (MITRE T1656): Display name or sender claims enterprise entity '{impersonated_brand.title()}', "
                 f"but originates from public consumer webmail provider (@{sender_domain})."
             )
-        elif impersonated_brand not in sender_domain:
+        elif sender_domain != f"{impersonated_brand}.com" and not sender_domain.endswith(f".{impersonated_brand}.com"):
             is_spoofed = True
             display_name_match = False
             sender_weight = 30
             domain_reputation_notes = (
-                f"Organizational Domain Mismatch: Sender display name '{display_name}' does not align with domain '{sender_domain}'."
+                f"Organizational Domain Mismatch (MITRE T1656): Sender references '{impersonated_brand.title()}', "
+                f"but domain '{sender_domain}' is not legitimate '{impersonated_brand}.com' corporate infrastructure."
             )
         else:
-            domain_reputation_notes = f"Sender domain aligns with reported entity '{display_name}'."
+            domain_reputation_notes = f"Sender domain aligns with reported entity '{impersonated_brand.title()}'."
     else:
         if sender_domain in KNOWN_FREE_MAIL_DOMAINS:
             domain_reputation_notes = f"Consumer webmail domain (@{sender_domain}) evaluated."
@@ -198,7 +199,18 @@ def analyze_heuristics_fallback(payload: AnalyzePayload) -> ThreatAnalysisRespon
             parts = hostname.lower().split(".")
             tld = parts[-1] if len(parts) > 1 else ""
 
-            # Homoglyphs / Typosquatting
+            # Brand Combosquatting & Typosquatting (e.g. login-microsoft.com, paypal-verify.com)
+            for brand in BRAND_KEYWORDS:
+                if brand in hostname:
+                    if hostname != f"{brand}.com" and not hostname.endswith(f".{brand}.com"):
+                        has_typosquatting = True
+                        url_weight += 35
+                        domain_risk_reasons.append(
+                            f"Brand Combosquatting / Deceptive Hostname: '{hostname}' incorporates brand '{brand}' outside verified infrastructure."
+                        )
+                        break
+
+            # Homoglyphs / Typosquatting (e.g. paypa1.com, g00gle.com)
             if any(char in hostname for char in ["0", "1", "vv"]):
                 if any(brand in hostname.replace("0", "o").replace("1", "l") for brand in BRAND_KEYWORDS):
                     has_typosquatting = True
@@ -303,11 +315,19 @@ def analyze_heuristics_fallback(payload: AnalyzePayload) -> ThreatAnalysisRespon
     )
 
 
+def get_candidate_models():
+    """Returns candidate Gemini models in priority order with user overrides and fallbacks."""
+    primary = os.getenv("GEMINI_MODEL", "gemini-3.8-flash")
+    candidates = [primary, "gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-flash-lite"]
+    seen = set()
+    return [m for m in candidates if not (m in seen or seen.add(m))]
+
+
 async def run_threat_analysis(payload: AnalyzePayload) -> ThreatAnalysisResponse:
     """
-    Executes single-pass threat analysis using Gemini 2.5 Flash with structured output.
+    Executes single-pass threat analysis using Gemini with structured output.
     Calibrated with NIST SP 800-61 and MITRE ATT&CK enterprise taxonomies.
-    Falls back gracefully to deterministic analysis if the Gemini API is unavailable.
+    Falls back gracefully to deterministic analysis if external AI APIs are unavailable.
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "your_gemini_api_key_here":
@@ -317,7 +337,7 @@ async def run_threat_analysis(payload: AnalyzePayload) -> ThreatAnalysisResponse
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta", "timeout": 20000})
 
         prompt = f"""
 You are an Autonomous Tier-3 SOC Security Analyst for APERTURE, an enterprise-grade Threat Intelligence and Dynamic Incident Remediation platform.
@@ -379,15 +399,40 @@ INPUT PAYLOAD:
 - Target URL: {payload.url or 'N/A'}
 """
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ThreatAnalysisResponse,
-                temperature=0.1
-            ),
-        )
+        candidate_models = get_candidate_models()
+        response = None
+        last_err = None
+
+        for model_name in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ThreatAnalysisResponse,
+                        temperature=0.1
+                    ),
+                )
+                if response and response.text:
+                    break
+            except Exception as model_err:
+                last_err = model_err
+                err_str = str(model_err)
+                is_recoverable = any(
+                    k in err_str for k in [
+                        "404", "NOT_FOUND", "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "504", "DEADLINE_EXCEEDED", "no longer available", "high demand"
+                    ]
+                )
+                if is_recoverable:
+                    print(f"[APERTURE Engine] Model '{model_name}' temporary issue ({err_str[:80]}). Cascading to next candidate...")
+                    continue
+                raise model_err
+
+        if not response or not response.text:
+            if last_err:
+                raise last_err
+            raise RuntimeError("Empty response received from Gemini engine.")
 
         data = json.loads(response.text)
         result = ThreatAnalysisResponse(**data)
@@ -411,50 +456,77 @@ INPUT PAYLOAD:
 
 async def extract_from_screenshot(image_bytes: bytes, mime_type: str = "image/png") -> ScreenshotExtractionResponse:
     """
-    Multimodal vision extraction using Gemini 2.5 Flash.
-    Extracts sender, message body, links, and detects missing critical telemetry from uploaded screenshot.
+    Multimodal vision extraction using Gemini Vision.
+    Directly processes image bytes through Gemini's visual reasoning engine (no traditional OCR needed),
+    extracting sender, message text, links, and missing telemetry into structured schema.
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "your_gemini_api_key_here":
         return ScreenshotExtractionResponse(
             sender="",
-            message="[OCR Fallback: Gemini API key not detected. Enter communication body manually or configure GEMINI_API_KEY.]",
+            message="[Vision Fallback: Gemini API key not detected. Enter communication body manually or configure GEMINI_API_KEY.]",
             detected_urls=[],
-            missing_critical_info=["Gemini API key is required for automated OCR vision parsing."]
+            missing_critical_info=["Gemini API key is required for automated vision parsing."]
         )
 
     try:
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta", "timeout": 20000})
 
         prompt = """
-Extract the cybersecurity analysis fields from this email/message screenshot:
-1. sender: The sender's email or display name header (if clearly visible).
-2. message: The main body text, alerts, or core message.
-3. detected_urls: Any links or domains visible in the screenshot.
-4. missing_critical_info: A list of any missing critical elements (e.g., if sender header is cropped out, or body is incomplete).
+You are a cybersecurity vision analyst. Visually inspect this screenshot of an email, SMS, or security alert:
+1. sender: Extract the sender's email or display name header (if clearly visible).
+2. message: Extract the main body text, alerts, or core communication.
+3. detected_urls: Extract any visible URLs, links, or destination domains.
+4. missing_critical_info: List any critical elements not visible in the screenshot (e.g. 'Sender email header is cropped out').
 """
+        # Pass image bytes directly to Gemini multimodal vision
         part = types.Part.from_bytes(data=image_bytes, mime_type=mime_type)
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[part, prompt],
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=ScreenshotExtractionResponse,
-                temperature=0.1
-            ),
-        )
+        candidate_models = get_candidate_models()
+        response = None
+        last_err = None
+
+        for model_name in candidate_models:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=[part, prompt],
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=ScreenshotExtractionResponse,
+                        temperature=0.1
+                    ),
+                )
+                if response and response.text:
+                    break
+            except Exception as model_err:
+                last_err = model_err
+                err_str = str(model_err)
+                is_recoverable = any(
+                    k in err_str for k in [
+                        "404", "NOT_FOUND", "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "504", "DEADLINE_EXCEEDED", "no longer available", "high demand"
+                    ]
+                )
+                if is_recoverable:
+                    print(f"[APERTURE Vision] Model '{model_name}' temporary issue ({err_str[:80]}). Cascading to next candidate...")
+                    continue
+                raise model_err
+
+        if not response or not response.text:
+            if last_err:
+                raise last_err
+            raise RuntimeError("Empty response received from Gemini vision engine.")
 
         data = json.loads(response.text)
         return ScreenshotExtractionResponse(**data)
     except Exception as exc:
-        print(f"[APERTURE Vision] Screenshot extraction error: {exc}")
+        print(f"[APERTURE Vision] Screenshot visual processing error: {exc}")
         return ScreenshotExtractionResponse(
             sender="",
             message="",
             detected_urls=[],
-            missing_critical_info=[f"Extraction failed: {str(exc)}. Please enter details manually."]
+            missing_critical_info=[f"Visual extraction error: {str(exc)}. Please enter details manually."]
         )

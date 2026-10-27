@@ -152,7 +152,7 @@ export default function MessageDeepScan() {
   const [loading, setLoading] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [error, setError] = useState("");
-  const [ocrWarning, setOcrWarning] = useState("");
+  const [visionWarning, setVisionWarning] = useState("");
   const [checkedActions, setCheckedActions] = useState({});
   const [copied, setCopied] = useState(false);
   const [dragActive, setDragActive] = useState(false);
@@ -164,7 +164,7 @@ export default function MessageDeepScan() {
     setSender(SAMPLE_SENDER);
     setMessage(SAMPLE_MESSAGE);
     setError("");
-    setOcrWarning("");
+    setVisionWarning("");
     setResult(null);
     setCheckedActions({});
   }
@@ -174,7 +174,7 @@ export default function MessageDeepScan() {
     setMessage("");
     setResult(null);
     setError("");
-    setOcrWarning("");
+    setVisionWarning("");
     setCheckedActions({});
     setCopied(false);
     setUploadedFileName("");
@@ -190,7 +190,7 @@ export default function MessageDeepScan() {
 
     setExtracting(true);
     setError("");
-    setOcrWarning("");
+    setVisionWarning("");
     setUploadedFileName(file.name);
 
     const formData = new FormData();
@@ -203,7 +203,7 @@ export default function MessageDeepScan() {
       });
 
       if (!response.ok) {
-        throw new Error(`OCR service returned HTTP ${response.status}`);
+        throw new Error(`Vision service returned HTTP ${response.status}`);
       }
 
       const data = await response.json();
@@ -216,13 +216,13 @@ export default function MessageDeepScan() {
       }
 
       if (data.missing_critical_info && data.missing_critical_info.length > 0) {
-        setOcrWarning(
+        setVisionWarning(
           `Partial extraction: ${data.missing_critical_info.join(". ")}. Please review or enter missing details manually before running inspection.`
         );
       }
     } catch (err) {
       console.error("Screenshot extraction error:", err);
-      setError(`Screenshot OCR extraction failed: ${err.message || "Ensure the APERTURE backend is running."}`);
+      setError(`Screenshot visual extraction failed: ${err.message || "Ensure the APERTURE backend is running."}`);
     } finally {
       setExtracting(false);
     }
@@ -356,7 +356,7 @@ export default function MessageDeepScan() {
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400">
               Deep semantic evaluation across identity headers, social-engineering manipulation,
-              and embedded attack vectors. Ingest raw headers or drop email screenshots for automated OCR extraction.
+              and embedded attack vectors. Ingest raw headers or drop email screenshots for Gemini multimodal vision extraction.
             </p>
           </div>
           <span className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/5 px-3 py-2 text-xs font-medium text-cyan-300">
@@ -374,8 +374,8 @@ export default function MessageDeepScan() {
               <ImageIcon size={18} />
             </div>
             <div>
-              <h2 className="text-sm font-semibold text-white">Multimodal Screenshot OCR Extraction</h2>
-              <p className="text-xs text-slate-400">Upload a screenshot of an email, SMS, or suspicious prompt to extract text automatically.</p>
+              <h2 className="text-sm font-semibold text-white">Multimodal Screenshot Vision Extraction</h2>
+              <p className="text-xs text-slate-400">Upload a screenshot of an email, SMS, or suspicious prompt to extract text automatically using Gemini Vision.</p>
             </div>
           </div>
           {uploadedFileName && (
@@ -414,7 +414,7 @@ export default function MessageDeepScan() {
             <div className="flex flex-col items-center gap-3">
               <LoaderCircle size={28} className="animate-spin text-cyan-400" />
               <p className="text-sm font-medium text-cyan-300">
-                Extracting message telemetry from screenshot via Gemini Vision...
+                Extracting message telemetry from screenshot via Gemini 2.5 Flash Vision...
               </p>
               <p className="text-xs text-slate-500">Isolating sender headers, body paragraphs, and destination URLs</p>
             </div>
@@ -431,12 +431,12 @@ export default function MessageDeepScan() {
           )}
         </div>
 
-        {ocrWarning && (
+        {visionWarning && (
           <div role="alert" className="mt-4 flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5 text-xs leading-5 text-amber-200">
             <AlertTriangle size={17} className="mt-0.5 shrink-0 text-amber-400" />
             <div className="flex-1">
               <span className="font-semibold">⚠️ Telemetry Notice: </span>
-              {ocrWarning}
+              {visionWarning}
             </div>
           </div>
         )}
@@ -477,7 +477,7 @@ export default function MessageDeepScan() {
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               rows={8}
-              placeholder="Paste suspicious message text, phishing lure, or extracted OCR body here..."
+              placeholder="Paste suspicious message text, phishing lure, or extracted vision body here..."
               className="w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 text-sm leading-6 text-white outline-none transition placeholder:text-slate-600 focus:border-cyan-400 focus:ring-2 focus:ring-cyan-400/10"
             />
             <p className="mt-2 text-xs text-slate-500">

@@ -195,7 +195,7 @@ def generate_playbook_with_gemini(
 ) -> IncidentPlaybook:
     """
     Uses Gemini 2.5 Flash to generate context-tailored IncidentPlaybook.
-    Falls back gracefully if the API fails or key is missing.
+    Falls back gracefully to the rule-based fallback engine if the API fails or key is missing.
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "your_gemini_api_key_here":
@@ -215,7 +215,7 @@ def generate_playbook_with_gemini(
         from google import genai
         from google.genai import types
 
-        client = genai.Client(api_key=api_key)
+        client = genai.Client(api_key=api_key, http_options={"api_version": "v1beta", "timeout": 20000})
 
         prompt = f"""
 You are the autonomous Tier-3 Incident Commander for APERTURE.
@@ -253,20 +253,54 @@ REQUIREMENTS:
 4. severity_level: Strictly match score thresholds (>=90: "CRITICAL", >=70: "HIGH", >=40: "MEDIUM", <40: "LOW").
 """
 
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=IncidentPlaybook,
-                temperature=0.1
-            ),
-        )
+        candidate_models = [
+            os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
+            "gemini-3.8-flash",
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite"
+        ]
+        seen = set()
+        unique_candidates = [m for m in candidate_models if not (m in seen or seen.add(m))]
+
+        response = None
+        last_err = None
+
+        for model_name in unique_candidates:
+            try:
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        response_schema=IncidentPlaybook,
+                        temperature=0.1
+                    ),
+                )
+                if response and response.text:
+                    break
+            except Exception as model_err:
+                last_err = model_err
+                err_str = str(model_err)
+                is_recoverable = any(
+                    k in err_str for k in [
+                        "404", "NOT_FOUND", "503", "UNAVAILABLE", "429", "RESOURCE_EXHAUSTED", "504", "DEADLINE_EXCEEDED", "no longer available", "high demand"
+                    ]
+                )
+                if is_recoverable:
+                    print(f"[APERTURE Playbook] Model '{model_name}' temporary issue ({err_str[:80]}). Cascading to next candidate...")
+                    continue
+                raise model_err
+
+        if not response or not response.text:
+            if last_err:
+                raise last_err
+            raise RuntimeError("Empty response received from Gemini engine.")
 
         data = json.loads(response.text)
         return IncidentPlaybook(**data)
 
-    except Exception:
+    except Exception as exc:
+        print(f"[APERTURE Playbook Error] {exc}. Routing to deterministic fallback.")
         return generate_rule_based_fallback(
             verdict=verdict,
             threat_score=threat_score,
