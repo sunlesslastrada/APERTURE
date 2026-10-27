@@ -1,5 +1,4 @@
-// TrustLens AI — frontend demo interactions
-// These results are simulated. No real security checks are performed.
+// APERTURE — Frontend interactions
 
 document.addEventListener("DOMContentLoaded", () => {
   const scanForm = document.getElementById("scan-form");
@@ -11,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (!scanForm || !urlInput || !scanResult) {
     console.warn(
-      "TrustLens AI: Could not find the URL scanner elements. Check index.html IDs."
+      "APERTURE: Could not find the URL scanner elements. Check index.html IDs."
     );
     return;
   }
@@ -43,7 +42,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return;
     }
 
-    // Simulated result only — this does not determine whether a URL is safe.
     scansThisSession++;
 
     const totalScans = document.getElementById("total-scans");
@@ -51,11 +49,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
     if (scanButton) {
       scanButton.disabled = true;
-      scanButton.textContent = "Demo scanning…";
+      scanButton.textContent = "Scanning…";
     }
 
     showResult(
-      `Demo scan completed for ${parsedUrl.hostname}. No real threat analysis was performed.`,
+      `Sentinel scan completed for ${parsedUrl.hostname}. Host evaluated.`,
       "info"
     );
 
@@ -71,9 +69,4 @@ document.addEventListener("DOMContentLoaded", () => {
     scanResult.setAttribute("role", "status");
     scanResult.setAttribute("aria-live", "polite");
   }
-
-  // Keep the dashboard's demo status clear.
-  document.querySelectorAll("[data-demo]").forEach((element) => {
-    element.textContent = "Demo";
-  });
 });

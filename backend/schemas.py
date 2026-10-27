@@ -45,6 +45,10 @@ class IncidentPlaybook(BaseModel):
         ..., 
         description="Severity level: LOW, MEDIUM, HIGH, or CRITICAL"
     )
+    threat_archetype: Optional[str] = Field(
+        default="BENIGN_LEGITIMATE",
+        description="Primary attack vector archetype (e.g. CREDENTIAL_HARVESTING, FINANCIAL_FRAUD_BEC, MALWARE_DROPPER, BRAND_TYPOSQUATTING, BENIGN_LEGITIMATE)"
+    )
 
 
 # --- Full Integrated Response Contract ---
@@ -52,6 +56,10 @@ class IncidentPlaybook(BaseModel):
 class ThreatAnalysisResponse(BaseModel):
     verdict: str         # SAFE, SUSPICIOUS, PHISHING
     threat_score: int    # 0 - 100
+    threat_archetype: str = Field(
+        default="BENIGN_LEGITIMATE",
+        description="Primary threat archetype: CREDENTIAL_HARVESTING, FINANCIAL_FRAUD_BEC, MALWARE_DROPPER, BRAND_TYPOSQUATTING, or BENIGN_LEGITIMATE"
+    )
     sender_analysis: SenderCheck
     content_analysis: ContentCheck
     url_analysis: URLCheck
@@ -63,9 +71,22 @@ class ThreatAnalysisResponse(BaseModel):
 class PlaybookRequest(BaseModel):
     verdict: str = Field(default="PHISHING", description="SAFE, SUSPICIOUS, or PHISHING")
     threat_score: int = Field(default=85, ge=0, le=100)
+    threat_archetype: Optional[str] = Field(default="CREDENTIAL_HARVESTING")
     sender_email: str = Field(default="support@paypa1-security.com")
     is_spoofed: bool = Field(default=True)
     urgency_detected: bool = Field(default=True)
     psychological_triggers: List[str] = Field(default_factory=lambda: ["Urgency", "Account Suspension", "Financial Fear"])
     flagged_urls: List[str] = Field(default_factory=lambda: ["https://paypa1-security.com/verify-login"])
     raw_snippet: Optional[str] = Field(default="Your account will be suspended in 24 hours. Click here to verify.")
+
+
+# --- Multimodal Screenshot OCR Ingestion Contract ---
+
+class ScreenshotExtractionResponse(BaseModel):
+    sender: str = Field(default="", description="The sender's email or display name header if visible")
+    message: str = Field(default="", description="The main body text, alerts, or core communication")
+    detected_urls: List[str] = Field(default_factory=list, description="Any links or domains visible in the screenshot")
+    missing_critical_info: List[str] = Field(
+        default_factory=list,
+        description="List of any missing critical elements (e.g. sender header cropped out, body incomplete)"
+    )

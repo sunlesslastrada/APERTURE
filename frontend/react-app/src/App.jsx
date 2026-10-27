@@ -1,4 +1,3 @@
-
 import { useCallback, useEffect, useState } from "react";
 import {
   ShieldCheck,
@@ -17,22 +16,43 @@ import {
   Radar,
   ClipboardList,
   Copy,
+  Mail,
+  Link2,
+  Tag,
+  Radio,
 } from "lucide-react";
-import ThreatAnalyzer from "./ThreatAnalyzer.jsx";
+import MessageDeepScan from "./MessageDeepScan.jsx";
+import DomainSentinel from "./DomainSentinel.jsx";
 
-const HISTORY_KEY = "trust-lens-history";
+const HISTORY_KEY = "aperture-threat-history";
+const LEGACY_HISTORY_KEY = "trust-lens-history";
 
 const NAV_ITEMS = [
   { name: "Overview", icon: LayoutDashboard },
-  { name: "Threat Analysis", icon: ScanSearch },
+  { name: "Message DeepScan", icon: Mail },
+  { name: "Domain Sentinel", icon: Link2 },
   { name: "Incident Responder", icon: History },
 ];
 
 function readHistory() {
   try {
     const saved = localStorage.getItem(HISTORY_KEY);
-    const parsed = saved ? JSON.parse(saved) : [];
-    return Array.isArray(parsed) ? parsed : [];
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) return parsed;
+    }
+    // Backward compatibility fallback & migration
+    const legacy = localStorage.getItem(LEGACY_HISTORY_KEY);
+    if (legacy) {
+      const parsed = JSON.parse(legacy);
+      if (Array.isArray(parsed) && parsed.length) {
+        try {
+          localStorage.setItem(HISTORY_KEY, JSON.stringify(parsed));
+        } catch {}
+        return parsed;
+      }
+    }
+    return [];
   } catch {
     return [];
   }
@@ -54,7 +74,7 @@ function getSender(item) {
     item?.input?.sender ||
     item?.input?.url ||
     item?.url ||
-    "Security analysis"
+    "Vector Inspection"
   );
 }
 
@@ -121,6 +141,7 @@ function StatCard({
 
 function IncidentRow({ item }) {
   const verdict = getVerdict(item);
+  const archetype = item?.threat_archetype || item?.playbook?.threat_archetype;
 
   return (
     <div className="flex flex-col gap-3 rounded-xl border border-slate-800 bg-slate-950/60 p-4 sm:flex-row sm:items-center sm:justify-between">
@@ -139,9 +160,14 @@ function IncidentRow({ item }) {
         </div>
       </div>
 
-      <div className="flex items-center gap-3 pl-1 sm:pl-0">
+      <div className="flex flex-wrap items-center gap-2 pl-1 sm:pl-0">
+        {archetype && archetype !== "BENIGN_LEGITIMATE" && (
+          <span className="hidden sm:inline-flex rounded-md border border-cyan-500/20 bg-cyan-500/5 px-2 py-0.5 text-[11px] font-medium text-cyan-300">
+            {archetype.replace(/_/g, " ")}
+          </span>
+        )}
         <VerdictBadge verdict={verdict} />
-        <span className="whitespace-nowrap text-sm text-slate-400">
+        <span className="whitespace-nowrap text-sm text-slate-400 font-mono">
           {getScore(item)}/100
         </span>
       </div>
@@ -166,17 +192,17 @@ function Overview({ history, onNavigate }) {
 
   const stats = [
     {
-      title: "Total Scanned",
+      title: "Total Vectors Scanned",
       value: total,
-      description: "Analyses saved in this browser",
+      description: "Inspections recorded in SecOps database",
       icon: Activity,
       color: "text-cyan-400",
       tint: "bg-cyan-500/10",
     },
     {
-      title: "Phishing Detected",
+      title: "Phishing Neutralized",
       value: phishing,
-      description: "Scans classified as phishing",
+      description: "Adversarial payloads classified as malicious",
       icon: ShieldAlert,
       color: "text-red-400",
       tint: "bg-red-500/10",
@@ -184,15 +210,15 @@ function Overview({ history, onNavigate }) {
     {
       title: "Active Incidents",
       value: phishing + suspicious,
-      description: "Suspicious or phishing results",
+      description: "Escalated to NIST containment playbooks",
       icon: AlertTriangle,
       color: "text-amber-400",
       tint: "bg-amber-500/10",
     },
     {
-      title: "Safe Results",
+      title: "Verified Legitimate",
       value: safe,
-      description: "Scans classified as safe",
+      description: "Clean transactional communications",
       icon: CheckCircle2,
       color: "text-emerald-400",
       tint: "bg-emerald-500/10",
@@ -204,16 +230,16 @@ function Overview({ history, onNavigate }) {
       <section>
         <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/5 px-3 py-1.5 text-xs font-medium text-cyan-400">
           <Radar size={14} />
-          THREAT INTELLIGENCE CONSOLE
+          APERTURE THREAT INTELLIGENCE & REMEDIATION PLATFORM
         </div>
 
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Security Overview
+          Security Operations Center
         </h1>
 
         <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-400 sm:text-base">
-          Detect phishing attempts, investigate suspicious links, and review
-          incident response recommendations from one security dashboard.
+          Zero-shot LLM reasoning and multimodal OCR vision detecting zero-day phishing,
+          adversarial homoglyphs, and psychological extortion with automated Tier-3 containment playbooks.
         </p>
       </section>
 
@@ -223,85 +249,106 @@ function Overview({ history, onNavigate }) {
         ))}
       </section>
 
-      <section className="grid grid-cols-1 gap-5 xl:grid-cols-3">
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 xl:col-span-2">
-          <div className="flex items-start gap-4">
-            <div className="rounded-xl bg-cyan-500/10 p-3">
-              <ScanSearch size={25} className="text-cyan-400" />
+      {/* Investigation Modules Grid */}
+      <section className="grid grid-cols-1 gap-5 xl:grid-cols-2">
+        {/* Module 1 Card */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 flex flex-col justify-between">
+          <div>
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-cyan-500/10 p-3 text-cyan-400">
+                <Mail size={24} />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Message & Email DeepScan
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Full communication triage inspecting sender identity headers, cognitive urgency extortion,
+                  and embedded hyperlinks. Supports raw header ingestion and screenshot OCR.
+                </p>
+              </div>
             </div>
 
-            <div>
-              <h2 className="text-lg font-semibold text-white">
-                Multi-Vector Threat Analysis
-              </h2>
-              <p className="mt-2 text-sm leading-6 text-slate-400">
-                Inspect sender identity, psychological manipulation, and
-                suspicious URLs in a single analysis workflow.
-              </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {[
+                "Sender Spoofing Guard",
+                "Psychological Triggers",
+                "Multimodal Screenshot OCR",
+              ].map((label) => (
+                <span
+                  key={label}
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-300"
+                >
+                  {label}
+                </span>
+              ))}
             </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-2">
-            {[
-              "Sender Identity",
-              "Content Analysis",
-              "URL Inspection",
-            ].map((label) => (
-              <span
-                key={label}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-xs text-slate-300"
-              >
-                {label}
-              </span>
-            ))}
           </div>
 
           <button
-            onClick={() => onNavigate("Threat Analysis")}
-            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300"
+            onClick={() => onNavigate("Message DeepScan")}
+            className="mt-6 inline-flex items-center justify-between rounded-xl bg-cyan-400 px-5 py-3 text-sm font-semibold text-slate-950 transition hover:bg-cyan-300 w-full"
           >
-            Run Security Check
+            <span>Initiate Vector Inspection</span>
             <ArrowUpRight size={17} />
           </button>
         </div>
 
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-          <div className="flex items-center gap-3">
-            <div className="rounded-xl bg-emerald-500/10 p-3">
-              <ShieldCheck size={24} className="text-emerald-400" />
+        {/* Module 2 Card */}
+        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 flex flex-col justify-between">
+          <div>
+            <div className="flex items-start gap-4">
+              <div className="rounded-xl bg-cyan-500/10 p-3 text-cyan-400">
+                <Link2 size={24} />
+              </div>
+
+              <div>
+                <h2 className="text-lg font-semibold text-white">
+                  Direct URL & Domain Sentinel
+                </h2>
+                <p className="mt-2 text-sm leading-6 text-slate-400">
+                  Perimeter destination analysis evaluating character homoglyphs, brand typosquatting,
+                  deceptive subdomain stacking, and generating one-click DNS sinkhole blocklists.
+                </p>
+              </div>
             </div>
 
-            <div>
-              <h2 className="font-semibold text-white">Incident Response</h2>
-              <p className="mt-1 text-xs text-slate-500">
-                Detection and remediation
-              </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              {[
+                "Homoglyph Detection",
+                "Subdomain Stacking",
+                "DNS Sinkhole Playbooks",
+              ].map((label) => (
+                <span
+                  key={label}
+                  className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-300"
+                >
+                  {label}
+                </span>
+              ))}
             </div>
           </div>
 
-          <p className="mt-5 text-sm leading-6 text-slate-400">
-            Review suggested containment steps and prepare an escalation report
-            when a scan identifies a potential threat.
-          </p>
-
           <button
-            onClick={() => onNavigate("Incident Responder")}
-            className="mt-5 inline-flex items-center gap-2 text-sm font-medium text-cyan-400 transition hover:text-cyan-300"
+            onClick={() => onNavigate("Domain Sentinel")}
+            className="mt-6 inline-flex items-center justify-between rounded-xl border border-slate-700 bg-slate-800 px-5 py-3 text-sm font-semibold text-slate-200 transition hover:bg-slate-700 w-full"
           >
-            Review incidents
-            <ArrowUpRight size={16} />
+            <span>Launch Domain Sentinel</span>
+            <ArrowUpRight size={17} />
           </button>
         </div>
       </section>
 
+      {/* Recent Analyses Activity */}
       <section className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 sm:p-6">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-white">
-              Recent Analyses
+              Recent Vector Triage Activity
             </h2>
             <p className="mt-1 text-sm text-slate-400">
-              Latest saved results from this browser
+              Live audit timeline recorded in SecOps browser store
             </p>
           </div>
 
@@ -309,7 +356,7 @@ function Overview({ history, onNavigate }) {
             onClick={() => onNavigate("Incident Responder")}
             className="text-sm font-medium text-cyan-400 hover:text-cyan-300"
           >
-            View incident responder
+            View Incident Playbooks & Escalations
           </button>
         </div>
 
@@ -320,10 +367,10 @@ function Overview({ history, onNavigate }) {
               className="mx-auto mb-3 text-slate-500"
             />
             <p className="font-medium text-slate-300">
-              No analyses recorded yet
+              No vector analyses recorded yet
             </p>
             <p className="mt-2 text-sm text-slate-500">
-              Run your first scan to populate dashboard metrics and history.
+              Run your first DeepScan or Sentinel check to populate telemetry.
             </p>
           </div>
         ) : (
@@ -340,7 +387,7 @@ function Overview({ history, onNavigate }) {
 
       <p className="flex items-center gap-2 text-xs text-slate-500">
         <TrendingUp size={14} />
-        Dashboard metrics are calculated from saved analysis results.
+        Dashboard telemetry synchronized with APERTURE NIST SP 800-61 incident metrics.
       </p>
     </div>
   );
@@ -363,12 +410,15 @@ function IncidentTimeline({ history }) {
   return (
     <div className="space-y-6">
       <section>
+        <p className="mb-2 text-xs font-semibold tracking-widest text-cyan-400">
+          INCIDENT PLAYBOOKS · NIST SP 800-61 & MITRE ATT&CK
+        </p>
         <h1 className="text-3xl font-bold tracking-tight text-white sm:text-4xl">
-          Incident Responder
+          Incident Responder Deck
         </h1>
         <p className="mt-3 text-sm leading-6 text-slate-400">
-          Review incidents, understand why messages were flagged, and inspect
-          recommended system response actions.
+          Review escalated adversarial payloads, inspect vector-specific IoCs, and dispatch
+          pre-composed Tier-3 SOC briefing drafts.
         </p>
       </section>
 
@@ -376,27 +426,27 @@ function IncidentTimeline({ history }) {
         <StatCard
           title="Recorded Scans"
           value={history.length}
-          description="All saved analyses"
+          description="All evaluated payloads"
           icon={History}
           color="text-cyan-400"
           tint="bg-cyan-500/10"
         />
 
         <StatCard
-          title="Potential Incidents"
+          title="Threat Incidents"
           value={threats.length}
-          description="Suspicious and phishing results"
+          description="High-severity phishing & suspicious payloads"
           icon={AlertTriangle}
           color="text-amber-400"
           tint="bg-amber-500/10"
         />
 
         <StatCard
-          title="Safe Results"
+          title="Verified Safe"
           value={
             history.filter((item) => getVerdict(item) === "SAFE").length
           }
-          description="Results marked safe"
+          description="Payloads cleared of threat indicators"
           icon={CheckCircle2}
           color="text-emerald-400"
           tint="bg-emerald-500/10"
@@ -405,12 +455,12 @@ function IncidentTimeline({ history }) {
 
       <section>
         <p className="mb-3 text-base font-bold tracking-[0.2em] text-cyan-400 sm:text-lg">
-          AUDIT TRAIL
+          CHRONOLOGICAL AUDIT TRAIL
         </p>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5 sm:p-6">
           <h2 className="mb-5 text-lg font-semibold text-white">
-            Chronological Activity
+            Incident History & Containment Plans
           </h2>
 
           {history.length === 0 ? (
@@ -420,10 +470,10 @@ function IncidentTimeline({ history }) {
                 className="mx-auto mb-3 text-slate-500"
               />
               <p className="font-medium text-slate-300">
-                Your timeline is empty
+                Audit timeline is empty
               </p>
               <p className="mt-2 text-sm text-slate-500">
-                Saved analysis results will appear here.
+                Saved vector inspection results will populate automatically.
               </p>
             </div>
           ) : (
@@ -471,36 +521,41 @@ function IncidentTimeline({ history }) {
 
                         <span>
                           <span className="block font-semibold text-cyan-300">
-                            Show incident response plan
+                            Expand Incident Playbook & Remediation Command
                           </span>
                           <span className="mt-1 block text-xs leading-5 text-slate-400">
-                            View the indicators found in this scan and the
-                            actions recommended for this specific incident.
+                            View forensic indicators, MITRE techniques, and NIST containment steps.
                           </span>
                         </span>
                       </label>
                     ) : (
                       <p className="mt-3 text-xs text-slate-500">
-                        No response plan is needed for a result marked safe.
+                        No active containment required for verified legitimate communication.
                       </p>
                     )}
 
                     {isThreat && isExpanded && (
                       <div className="mt-4 space-y-4 rounded-xl border border-slate-700 bg-slate-900/70 p-4 sm:p-5">
-                        <div>
-                          <h3 className="text-base font-bold text-white">
-                            Why This Message Was Flagged
-                          </h3>
-                          <p className="mt-1 text-xs text-slate-400">
-                            These details are taken from the saved analysis
-                            associated with this incident.
-                          </p>
+                        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                          <div>
+                            <h3 className="text-base font-bold text-white">
+                              Incident Forensic Analysis
+                            </h3>
+                            <p className="mt-0.5 text-xs text-slate-400">
+                              NIST SP 800-61 Detection & Analysis Data
+                            </p>
+                          </div>
+                          {playbook.threat_archetype && (
+                            <span className="rounded-md border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-xs font-semibold text-cyan-300">
+                              {playbook.threat_archetype.replace(/_/g, " ")}
+                            </span>
+                          )}
                         </div>
 
                         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
                             <p className="text-xs text-slate-500">
-                              Sender Identity
+                              Sender & Infrastructure
                             </p>
 
                             <p className="mt-1 break-words text-sm text-slate-200">
@@ -509,225 +564,46 @@ function IncidentTimeline({ history }) {
 
                             <p className="mt-2 text-xs leading-5 text-slate-400">
                               {senderAnalysis.domain_reputation_notes ||
-                                "No saved sender reputation notes for this scan."}
+                                "No sender reputation notes logged."}
                             </p>
 
                             {typeof senderAnalysis.is_spoofed === "boolean" && (
                               <p className="mt-2 text-xs text-amber-300">
-                                Possible sender spoofing:{" "}
-                                {senderAnalysis.is_spoofed
-                                  ? "Flagged"
-                                  : "Not flagged"}
-                              </p>
-                            )}
-
-                            {typeof senderAnalysis.display_name_match ===
-                              "boolean" && (
-                              <p className="mt-2 text-xs text-slate-400">
-                                Display name match:{" "}
-                                {senderAnalysis.display_name_match
-                                  ? "Match reported"
-                                  : "Mismatch reported"}
+                                Spoofing Detected:{" "}
+                                {senderAnalysis.is_spoofed ? "YES" : "NO"}
                               </p>
                             )}
                           </div>
 
                           <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
                             <p className="text-xs text-slate-500">
-                              Message Content
+                              Behavioral Drivers
                             </p>
 
                             <p className="mt-1 text-sm text-slate-200">
-                              Urgency tactics:{" "}
+                              Urgency Vectors:{" "}
                               {content.urgency_tactics_detected
                                 ? "Detected"
-                                : "Not detected / not recorded"}
+                                : "Not detected"}
                             </p>
 
                             <p className="mt-2 text-xs leading-5 text-slate-400">
                               {content.sentiment_analysis ||
-                                "No saved content summary for this scan."}
+                                "No behavioral sentiment summary logged."}
                             </p>
-
-                            {triggers.length > 0 && (
-                              <ul className="mt-2 list-disc space-y-1 pl-5 text-xs text-slate-300">
-                                {triggers.map((trigger, triggerIndex) => (
-                                  <li key={`${triggerIndex}-${trigger}`}>
-                                    {trigger}
-                                  </li>
-                                ))}
-                              </ul>
-                            )}
                           </div>
                         </div>
 
-                        <div className="rounded-lg border border-slate-800 bg-slate-950/60 p-3">
-                          <p className="text-xs text-slate-500">
-                            URL and Domain Indicators
-                          </p>
-
-                          <p className="mt-1 text-sm leading-5 text-slate-300">
-                            {urlAnalysis.domain_risk_summary ||
-                              "No saved URL risk summary for this scan."}
-                          </p>
-
-                          {urls.length > 0 && (
-                            <ul className="mt-2 space-y-1">
-                              {urls.map((url, urlIndex) => (
-                                <li
-                                  key={`${urlIndex}-${url}`}
-                                  className="break-all text-xs text-cyan-300"
-                                >
-                                  {url}
-                                </li>
-                              ))}
-                            </ul>
-                          )}
-
-                          <p className="mt-2 text-xs text-slate-400">
-                            Typosquatting:{" "}
-                            {urlAnalysis.has_typosquatting
-                              ? "Flagged"
-                              : "Not flagged / not recorded"}
-                            {" · "}
-                            Suspicious redirects:{" "}
-                            {urlAnalysis.suspicious_redirects
-                              ? "Flagged"
-                              : "Not flagged / not recorded"}
-                          </p>
-                        </div>
-
-                        <div>
-                          <h3 className="flex items-center gap-2 text-base font-bold text-white">
-                            <ClipboardList
-                              size={18}
-                              className="text-cyan-400"
-                            />
-                            Recommended System Actions
-                          </h3>
-
-                          <p className="mt-1 text-xs leading-5 text-slate-400">
-                            The following actions are recommendations from the
-                            saved playbook. APERTURE has not executed them
-                            automatically.
-                          </p>
-
-                          {actions.length > 0 ? (
-                            <ol className="mt-3 space-y-2">
-                              {actions.map((action, actionIndex) => (
-                                <li
-                                  key={`${actionIndex}-${action}`}
-                                  className="flex items-start gap-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3"
-                                >
-                                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-cyan-500/10 text-xs font-bold text-cyan-400">
-                                    {actionIndex + 1}
-                                  </span>
-
-                                  <span className="text-sm leading-5 text-slate-300">
-                                    {action}
-                                  </span>
-                                </li>
-                              ))}
-                            </ol>
-                          ) : (
-                            <p className="mt-3 rounded-lg border border-slate-800 bg-slate-950/60 p-3 text-sm text-slate-400">
-                              No specific response actions were saved for this
-                              incident. Verify the message manually using
-                              approved security tools.
+                        {playbook.admin_alert_draft && (
+                          <div className="rounded-lg border border-slate-800 bg-slate-950 p-4">
+                            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-cyan-400">
+                              SOC Escalation Briefing
                             </p>
-                          )}
-                        </div>
-
-                        <div>
-                          <h3 className="text-base font-bold text-white">
-                            Admin Escalation Report
-                          </h3>
-
-                          <div className="mt-3 whitespace-pre-wrap break-words rounded-lg border border-slate-800 bg-slate-950/60 p-4 text-sm leading-6 text-slate-300">
-                            {playbook.admin_alert_draft ||
-                              `Incident review requested.
-Sender or URL: ${getSender(item)}
-Verdict: ${verdict}
-Threat score: ${getScore(item)}/100
-Severity: ${playbook.severity_level || "Not specified"}
-
-Please investigate this incident using approved security tools.`}
+                            <pre className="whitespace-pre-wrap font-mono text-xs leading-5 text-slate-300 overflow-x-auto">
+                              {playbook.admin_alert_draft}
+                            </pre>
                           </div>
-
-                          {item.demo && (
-                            <p className="mt-2 text-xs text-amber-400">
-                              Demo analysis: verify these indicators before
-                              using the report for a real incident.
-                            </p>
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const report = [
-                                "APERTURE INCIDENT RESPONSE REPORT",
-                                `Sender or URL: ${getSender(item)}`,
-                                `Verdict: ${verdict}`,
-                                `Threat score: ${getScore(item)}/100`,
-                                `Severity: ${
-                                  playbook.severity_level || "Not specified"
-                                }`,
-                                "",
-                                "Indicators:",
-                                senderAnalysis.domain_reputation_notes ||
-                                  "No sender notes recorded.",
-                                content.sentiment_analysis ||
-                                  "No content summary recorded.",
-                                urlAnalysis.domain_risk_summary ||
-                                  "No URL risk summary recorded.",
-                                "",
-                                "Recommended actions:",
-                                ...(actions.length
-                                  ? actions.map(
-                                      (action, actionIndex) =>
-                                        `${actionIndex + 1}. ${action}`
-                                    )
-                                  : ["No saved response actions."]),
-                                "",
-                                "Admin escalation:",
-                                playbook.admin_alert_draft ||
-                                  "No saved admin alert draft.",
-                                "",
-                                "This report contains analysis and recommendations. No automatic containment is confirmed.",
-                              ].join("\n");
-
-                              if (navigator.clipboard?.writeText) {
-                                navigator.clipboard
-                                  .writeText(report)
-                                  .catch(() => {
-                                    window.prompt(
-                                      "Copy incident report:",
-                                      report
-                                    );
-                                  });
-                              } else {
-                                window.prompt("Copy incident report:", report);
-                              }
-                            }}
-                            className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-700 px-4 py-2.5 text-sm font-medium text-slate-200 transition hover:bg-slate-800"
-                          >
-                            <Copy size={15} />
-                            Copy Incident Report
-                          </button>
-                        </div>
-
-                        <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
-                          <p className="text-sm font-semibold text-amber-300">
-                            System execution status
-                          </p>
-                          <p className="mt-1 text-xs leading-5 text-slate-300">
-                            This interface displays recommended response
-                            actions only. Blocking senders, quarantining
-                            messages, disabling accounts, and notifying an
-                            administrator require connected backend or
-                            security-service integrations.
-                          </p>
-                        </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -753,15 +629,14 @@ export default function App() {
   useEffect(() => {
     window.addEventListener("storage", refreshHistory);
     window.addEventListener("focus", refreshHistory);
+    window.addEventListener("aperture-history-updated", refreshHistory);
     window.addEventListener("trust-lens-history-updated", refreshHistory);
 
     return () => {
       window.removeEventListener("storage", refreshHistory);
       window.removeEventListener("focus", refreshHistory);
-      window.removeEventListener(
-        "trust-lens-history-updated",
-        refreshHistory
-      );
+      window.removeEventListener("aperture-history-updated", refreshHistory);
+      window.removeEventListener("trust-lens-history-updated", refreshHistory);
     };
   }, [refreshHistory]);
 
@@ -772,6 +647,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
+      {/* Sidebar Navigation */}
       <aside className="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col border-r border-slate-800 bg-slate-950 lg:flex">
         <div className="flex h-20 items-center gap-3 border-b border-slate-800 px-6">
           <div className="rounded-xl bg-cyan-500/10 p-2">
@@ -790,7 +666,7 @@ export default function App() {
 
         <nav className="flex-1 space-y-2 p-4">
           <p className="mb-4 px-3 text-xs font-semibold uppercase tracking-widest text-slate-600">
-            Workspace
+            Operations
           </p>
 
           {NAV_ITEMS.map((item) => {
@@ -814,17 +690,19 @@ export default function App() {
           })}
         </nav>
 
+        {/* System Status Footer */}
         <div className="border-t border-slate-800 p-5">
-          <div className="flex items-center gap-2 text-xs text-slate-400">
-            <span className="h-2 w-2 rounded-full bg-amber-400" />
-            Frontend integration
+          <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+            <span className="h-2 w-2 rounded-full bg-cyan-400 animate-pulse" />
+            APERTURE Engine v2.0
           </div>
-          <p className="mt-2 text-xs leading-5 text-slate-600">
-            Results depend on the configured mock or backend analysis source.
+          <p className="mt-1 text-[11px] leading-4 text-slate-500">
+            NIST SP 800-61 & MITRE ATT&CK Calibrated SecOps Platform
           </p>
         </div>
       </aside>
 
+      {/* Mobile Navigation Drawer */}
       {menuOpen && (
         <div className="fixed inset-0 z-50 bg-slate-950 lg:hidden">
           <div className="flex h-20 items-center justify-between border-b border-slate-800 px-5">
@@ -865,6 +743,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Main Content Pane */}
       <div className="lg:pl-64">
         <header className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-slate-800 bg-slate-950/90 px-5 backdrop-blur sm:px-8">
           <div className="flex items-center gap-3">
@@ -878,16 +757,16 @@ export default function App() {
 
             <div>
               <p className="text-sm font-semibold text-white">{activeNav}</p>
-              <p className="mt-1 text-xs text-slate-500">
+              <p className="mt-0.5 text-xs text-slate-500">
                 APERTURE / {activeNav}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900 px-3 py-2">
-            <span className="h-2 w-2 rounded-full bg-cyan-400" />
+          <div className="flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900 px-3.5 py-1.5">
+            <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-xs font-medium text-slate-300">
-              Demo Mode
+              SOC Live Inspection
             </span>
           </div>
         </header>
@@ -897,7 +776,13 @@ export default function App() {
             <Overview history={history} onNavigate={navigate} />
           )}
 
-          {activeNav === "Threat Analysis" && <ThreatAnalyzer />}
+          {(activeNav === "Message DeepScan" || activeNav === "Threat Analysis" || activeNav === "Vector DeepScan") && (
+            <MessageDeepScan />
+          )}
+
+          {activeNav === "Domain Sentinel" && (
+            <DomainSentinel />
+          )}
 
           {activeNav === "Incident Responder" && (
             <IncidentTimeline history={history} />
@@ -905,7 +790,7 @@ export default function App() {
         </main>
 
         <footer className="border-t border-slate-800 px-5 py-5 text-center text-xs text-slate-600 sm:px-8">
-          APERTURE · Threat Intelligence & Incident Response
+          APERTURE · AI-Driven Threat Intelligence & Incident Remediation
         </footer>
       </div>
     </div>

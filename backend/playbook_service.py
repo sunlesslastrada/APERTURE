@@ -1,4 +1,5 @@
 import os
+import re
 import uuid
 import json
 from datetime import datetime, timezone
@@ -9,8 +10,9 @@ from schemas import IncidentPlaybook, SenderCheck, ContentCheck, URLCheck, Playb
 
 load_dotenv()
 
-# Helper to calculate severity from score
+
 def calculate_severity(score: int) -> str:
+    """NIST-aligned quantitative severity calibration."""
     if score >= 90:
         return "CRITICAL"
     elif score >= 70:
@@ -20,6 +22,54 @@ def calculate_severity(score: int) -> str:
     return "LOW"
 
 
+def infer_threat_archetype(
+    snippet: str,
+    sender: str,
+    urls: List[str],
+    triggers: List[str],
+    threat_score: int
+) -> str:
+    """Classifies threat vectors into defined cybersecurity archetypes."""
+    if threat_score < 40:
+        return "BENIGN_LEGITIMATE"
+
+    combined = f"{snippet} {sender} {' '.join(urls)} {' '.join(triggers)}".lower()
+
+    # 1. Typosquatting / Homoglyph Indicators
+    for u in urls:
+        u_lower = u.lower()
+        if any(h in u_lower for h in ["0", "1", "vv"]) and any(b in u_lower.replace("0", "o").replace("1", "l") for b in ["microsoft", "paypal", "apple", "google", "amazon", "netflix", "chase"]):
+            return "BRAND_TYPOSQUATTING"
+        if any(tld in u_lower for tld in [".top", ".xyz", ".biz", ".ru", ".tk"]):
+            return "BRAND_TYPOSQUATTING"
+
+    # 2. Financial / BEC Indicators
+    if any(k in combined for k in ["wire", "invoice", "payment", "gift card", "bank transfer", "payroll", "ach", "remittance", "swift", "direct deposit", "w-2", "accounting"]):
+        return "FINANCIAL_FRAUD_BEC"
+
+    # 3. Malware / Dropper Indicators
+    if any(k in combined for k in ["attachment", "macro", "download", "payload", ".exe", ".iso", ".zip", ".vbs", ".scr", "install update"]):
+        return "MALWARE_DROPPER"
+
+    # 4. Credential Harvesting (default phishing vector)
+    if any(k in combined for k in ["login", "verify", "password", "account", "sso", "credential", "suspend", "unauthorized access", "session", "reset"]):
+        return "CREDENTIAL_HARVESTING"
+
+    return "CREDENTIAL_HARVESTING" if threat_score >= 70 else "BRAND_TYPOSQUATTING"
+
+
+def get_mitre_mapping(archetype: str) -> str:
+    """Maps threat archetype to MITRE ATT&CK techniques."""
+    mappings = {
+        "CREDENTIAL_HARVESTING": "T1566.002 (Phishing: Spearphishing Link) | T1528 (Steal Application Access Token) | T1539 (Steal Web Session Cookie)",
+        "FINANCIAL_FRAUD_BEC": "T1566.002 (Phishing: Spearphishing Link) | T1534 (Internal Spearphishing) | T1656 (Impersonation)",
+        "MALWARE_DROPPER": "T1566.001 (Phishing: Spearphishing Attachment) | T1204.002 (User Execution: Malicious File) | T1059 (Command and Scripting Interpreter)",
+        "BRAND_TYPOSQUATTING": "T1583.001 (Acquire Infrastructure: Domains) | T1566.002 (Phishing: Spearphishing Link)",
+        "BENIGN_LEGITIMATE": "N/A (Standard Benign Telemetry)"
+    }
+    return mappings.get(archetype, "T1566 (Phishing)")
+
+
 def generate_rule_based_fallback(
     verdict: str,
     threat_score: int,
@@ -27,89 +77,108 @@ def generate_rule_based_fallback(
     is_spoofed: bool,
     urgency_detected: bool,
     psychological_triggers: List[str],
-    flagged_urls: List[str]
+    flagged_urls: List[str],
+    raw_snippet: Optional[str] = "",
+    threat_archetype: Optional[str] = None
 ) -> IncidentPlaybook:
     """
     Guaranteed fallback engine: Executes if Gemini API key is missing or throttled.
-    Ensures APERTURE never throws a 500 error during a live presentation.
+    Ensures APERTURE never throws a 500 error and generates NIST SP 800-61 / MITRE ATT&CK aligned playbooks.
     """
     severity = calculate_severity(threat_score)
+    archetype = threat_archetype or infer_threat_archetype(
+        snippet=raw_snippet or "",
+        sender=sender_email,
+        urls=flagged_urls,
+        triggers=psychological_triggers,
+        threat_score=threat_score
+    )
+    mitre_technique = get_mitre_mapping(archetype)
     incident_id = f"AP-{uuid.uuid4().hex[:8].upper()}"
     timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-    # If SAFE verdict
-    if verdict == "SAFE" and threat_score < 40:
-        return IncidentPlaybook(
-            severity_level="LOW",
-            immediate_actions=[
-                "No active containment required. Message verified as legitimate.",
-                "Continue adhering to standard organizational email verification hygiene.",
-                "Report any unexpected follow-up communications requesting sensitive data."
-            ],
-            admin_alert_draft=(
-                f"### [INFORMATIONAL] APERTURE Threat Scan Log\n"
-                f"- **Incident ID:** {incident_id}\n"
-                f"- **Timestamp:** {timestamp}\n"
-                f"- **Verdict:** SAFE (Threat Score: {threat_score}/100)\n"
-                f"- **Sender:** `{sender_email}`\n"
-                f"- **Status:** No malicious vectors identified. Safe to proceed."
-            )
-        )
+    # MTTC Target calibration
+    if severity == "CRITICAL":
+        mttc = "< 15 Minutes (Immediate SecOps Tier-3 Escalation)"
+    elif severity == "HIGH":
+        mttc = "< 30 Minutes (High-Priority Incident Queue)"
+    elif severity == "MEDIUM":
+        mttc = "< 2 Hours (Standard Analyst Triage)"
+    else:
+        mttc = "Routine / Informational Telemetry"
 
-    # Dynamic containment steps based on specific detected threat vectors
-    actions: List[str] = []
-    
-    if is_spoofed:
-        actions.append("EMERGENCY IDENTITY LOCK: Invalidate active SSO sessions and enforce Active Directory password reset for targeted user.")
-        actions.append("MAILBOX AUDIT: Check user inbox for unauthorized forwarding rules, delegates, and deleted item anomalies.")
-    
-    if flagged_urls:
-        actions.append(f"DNS & PROXY SINKHOLE: Add flagged domain(s) ({', '.join(flagged_urls[:2])}) to corporate firewall blocklist.")
-        actions.append("BROWSER CACHE PURGE: Inspect user endpoint for credential auto-fill submission or suspicious file downloads.")
-    
-    if urgency_detected or psychological_triggers:
-        actions.append("SECURITY AWARENESS TAG: Flag user account for targeted social-engineering simulation and alert team leads.")
-
-    if not actions:
+    # Actions tailored to threat archetype
+    if archetype == "CREDENTIAL_HARVESTING":
+        immediate_command = "Revoke all active Azure AD / Okta SSO session tokens and force an Active Directory password reset for targeted user."
         actions = [
-            "Revoke current user session tokens and enforce multi-factor authentication (MFA).",
-            "Quarantine email across all organizational mailboxes via Exchange/Google Workspace admin console.",
-            "Inspect network telemetry for outbound connections to suspect domain."
+            "EMERGENCY IDENTITY LOCK: Invalidate active Azure AD/Okta SSO refresh tokens and terminate all concurrent web sessions.",
+            "CREDENTIAL REVOCATION: Force mandatory out-of-band password reset across Active Directory for targeted victim.",
+            "MFA CHALLENGE AUDIT: Inspect recent authentication logs for push-fatigue / MFA spray patterns or rogue authenticator app registrations.",
+            "MAILBOX INTEGRITY AUDIT: Query Microsoft Graph / Google Workspace API for unauthorized inbox forwarding rules, delegates, and hidden rules.",
+            "EDR BROWSER CACHE PURGE: Inspect endpoint for credential auto-fill submission or unauthorized password manager access."
+        ]
+    elif archetype == "FINANCIAL_FRAUD_BEC":
+        immediate_command = "Notify Accounts Payable and Finance Treasury to place an immediate disbursement hold on any pending wire or ACH transactions."
+        actions = [
+            "FINANCIAL DISBURSEMENT FREEZE: Immediately notify Accounts Payable and Finance Treasury to place hold on pending wire transfers and ACH batches.",
+            "OUT-OF-BAND PROTOCOL: Require secondary authorized voice verification with the purported requestor via verified internal extension.",
+            "INBOX DELEGATION CHECK: Audit executive mailbox forwarding configurations and audit recent OAuth consents for third-party mail sync tools.",
+            "SPF/DKIM/DMARC AUDIT: Inspect email headers for display-name impersonation bypassing perimeter DMARC alignment."
+        ]
+    elif archetype == "MALWARE_DROPPER":
+        immediate_command = "Isolate the host endpoint from the local network VLAN via EDR console to prevent lateral movement."
+        actions = [
+            "HOST NETWORK ISOLATION: Execute immediate EDR command to isolate targeted endpoint host from corporate VLAN/subnet.",
+            "VOLATILE MEMORY PRESERVATION: Trigger automated RAM memory dump and triage image capture before host shutdown for forensic analysis.",
+            "EDR PROCESS TREE INSPECTION: Scan endpoint process tree for anomalous parent-child relationships (e.g. Word/Excel spawning PowerShell or cmd.exe).",
+            "PERIMETER HASH SINKHOLE: Extract file hash/download URL and push IoC to perimeter firewall and secure email gateway (SEG) blacklist."
+        ]
+    elif archetype == "BRAND_TYPOSQUATTING":
+        immediate_command = "Sinkhole the typosquatted domain across perimeter DNS firewalls and Secure Web Gateway (SWG) blocklists."
+        actions = [
+            "PERIMETER DNS SINKHOLE: Add typosquatted domain(s) to corporate DNS firewall, proxy blocklist, and Secure Web Gateway (SWG).",
+            "REGISTRAR TAKEDOWN DISPATCH: Generate and transmit RFC 2142 abuse notification to destination registrar and hosting provider for malicious domain revocation.",
+            "ENDPOINT AUTO-FILL PURGE: Clear stored browser session cache and auto-filled corporate credentials on affected user endpoints.",
+            "SIEM TELEMETRY HUNT: Query proxy and DNS logs across the last 30 days for any prior organizational queries resolving to the malicious domain."
+        ]
+    else:  # BENIGN_LEGITIMATE
+        immediate_command = "No active containment required. Record scan in SIEM telemetry log."
+        actions = [
+            "Standard email hygiene verified. No active containment required.",
+            "Continue adhering to zero-trust email verification hygiene and out-of-band verification procedures.",
+            "Log threat scan telemetry into SIEM index for baseline model calibration."
         ]
 
-    # Pre-drafted markdown SOC escalation report ready for one-click clipboard copy
-    triggers_str = ", ".join(psychological_triggers) if psychological_triggers else "Social engineering urgency tactics"
+    # Clean formatting for indicators
+    triggers_str = ", ".join(psychological_triggers) if psychological_triggers else "None detected"
     urls_str = ", ".join(f"`{u}`" for u in flagged_urls) if flagged_urls else "`None identified`"
 
-    soc_report = f"""### 🚨 APERTURE — Automated Incident Escalation Briefing
-**Incident ID:** `{incident_id}`  
-**Timestamp:** `{timestamp}`  
-**Triage Severity:** **{severity}** (Global Threat Score: **{threat_score}/100**)  
-**Verdict:** `{verdict}`
+    soc_report = f"""### 🚨 APERTURE TIER-3 INCIDENT ESCALATION BRIEFING
+- **Incident Category**: `{archetype}`
+- **Assigned Severity**: **{severity}** (Global Threat Score: **{threat_score}/100**)
+- **MITRE ATT&CK Mapping**: `{mitre_technique}`
+- **NIST SP 800-61 Lifecycle Phase**: `Containment, Eradication & Recovery`
+- **Estimated MTTC Target**: `{mttc}`
+- **Sender & Infrastructure**: `{sender_email}` (Spoofing Flag: `{"YES - High Risk" if is_spoofed else "NO"}`)
+- **Attack Surface / IoCs**: {urls_str}
+- **Social Engineering Vectors**: `{triggers_str}`
+
+#### ⚡ Immediate Containment Command (NIST Containment Phase):
+> {immediate_command}
+
+#### 🛠️ Operational Remediation Steps:
+""" + "\n".join(f"{i+1}. {act}" for i, act in enumerate(actions)) + f"""
 
 ---
-
-#### 1. Attack Vector & IOC Summary
-- **Originating Sender:** `{sender_email}`
-- **Sender Spoofing Detected:** `{"YES - High Risk" if is_spoofed else "NO"}`
-- **Flagged URLs / Destinations:** {urls_str}
-- **Psychological Drivers:** `{triggers_str}`
-
----
-
-#### 2. Immediate Automated Containment Enacted
-1. Flagged for immediate quarantine across mail gateway.
-2. Invalidation of victim OAuth authorization tokens recommended.
-3. Domain blacklisting request generated for Perimeter SOC.
-
----
-*Report auto-compiled by APERTURE Incident Responder Engine.*
+*Report auto-compiled by APERTURE Threat Intelligence & Incident Response Engine.*
+*Incident ID: {incident_id} | Timestamp: {timestamp}*
 """
 
     return IncidentPlaybook(
         immediate_actions=actions,
         admin_alert_draft=soc_report,
-        severity_level=severity
+        severity_level=severity,
+        threat_archetype=archetype
     )
 
 
@@ -121,7 +190,8 @@ def generate_playbook_with_gemini(
     urgency_detected: bool,
     psychological_triggers: List[str],
     flagged_urls: List[str],
-    raw_snippet: Optional[str] = ""
+    raw_snippet: Optional[str] = "",
+    threat_archetype: Optional[str] = None
 ) -> IncidentPlaybook:
     """
     Uses Gemini 2.5 Flash to generate context-tailored IncidentPlaybook.
@@ -129,9 +199,16 @@ def generate_playbook_with_gemini(
     """
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key or api_key == "your_gemini_api_key_here":
-        # Graceful fallback without crashing
         return generate_rule_based_fallback(
-            verdict, threat_score, sender_email, is_spoofed, urgency_detected, psychological_triggers, flagged_urls
+            verdict=verdict,
+            threat_score=threat_score,
+            sender_email=sender_email,
+            is_spoofed=is_spoofed,
+            urgency_detected=urgency_detected,
+            psychological_triggers=psychological_triggers,
+            flagged_urls=flagged_urls,
+            raw_snippet=raw_snippet,
+            threat_archetype=threat_archetype
         )
 
     try:
@@ -142,11 +219,12 @@ def generate_playbook_with_gemini(
 
         prompt = f"""
 You are the autonomous Tier-3 Incident Commander for APERTURE.
-Analyze the following threat triage data and generate an actionable IncidentPlaybook.
+Analyze the following threat triage data and generate an actionable, NIST SP 800-61 and MITRE ATT&CK aligned IncidentPlaybook.
 
 THREAT CONTEXT:
 - Verdict: {verdict}
 - Threat Score: {threat_score}/100
+- Threat Archetype: {threat_archetype or 'Infer based on payload'}
 - Sender Email: {sender_email} (Spoofed: {is_spoofed})
 - Urgency/Fear Tactics: {urgency_detected}
 - Psychological Triggers: {', '.join(psychological_triggers)}
@@ -154,9 +232,25 @@ THREAT CONTEXT:
 - Raw Snippet: {raw_snippet}
 
 REQUIREMENTS:
-1. immediate_actions: A list of 3-5 prioritized, concrete containment commands (Active Directory, OAuth revocation, mailbox forwarding audit, domain sinkholing).
-2. admin_alert_draft: A professional, markdown-formatted SOC incident escalation report with incident ID, timestamp, technical IOCs, and recommended actions ready for one-click copy.
-3. severity_level: Strictly one of "LOW", "MEDIUM", "HIGH", or "CRITICAL".
+1. threat_archetype: Strictly one of: "CREDENTIAL_HARVESTING", "FINANCIAL_FRAUD_BEC", "MALWARE_DROPPER", "BRAND_TYPOSQUATTING", "BENIGN_LEGITIMATE".
+2. immediate_actions: A list of 3-5 prioritized, concrete containment commands tailored to the archetype (e.g. Active Directory/SSO revocation for credentials, accounts payable freeze for BEC, VLAN isolation for malware, DNS sinkhole for typosquats).
+3. admin_alert_draft: A professional markdown-formatted SOC incident escalation briefing formatted as:
+### 🚨 APERTURE TIER-3 INCIDENT ESCALATION BRIEFING
+- **Incident Category**: [Detected Archetype]
+- **Assigned Severity**: [LOW | MEDIUM | HIGH | CRITICAL]
+- **MITRE ATT&CK Mapping**: [e.g., T1566.002 - Spearphishing Link]
+- **NIST SP 800-61 Lifecycle Phase**: Containment, Eradication & Recovery
+- **Estimated MTTC Target**: [e.g., < 15 Minutes (Immediate SecOps Tier-3 Escalation)]
+- **Sender & Infrastructure**: [Sender address and spoofing status]
+- **Attack Surface / IoCs**: [Flagged URLs, domains, homoglyphs]
+- **Social Engineering Vectors**: [Psychological triggers]
+
+#### ⚡ Immediate Containment Command (NIST Containment Phase):
+> [Single most urgent action for IT/SecOps]
+
+#### 🛠️ Operational Remediation Steps:
+[Numbered list of immediate containment actions]
+4. severity_level: Strictly match score thresholds (>=90: "CRITICAL", >=70: "HIGH", >=40: "MEDIUM", <40: "LOW").
 """
 
         response = client.models.generate_content(
@@ -173,7 +267,14 @@ REQUIREMENTS:
         return IncidentPlaybook(**data)
 
     except Exception:
-        # If any network or API error occurs, seamlessly return high-fidelity fallback
         return generate_rule_based_fallback(
-            verdict, threat_score, sender_email, is_spoofed, urgency_detected, psychological_triggers, flagged_urls
+            verdict=verdict,
+            threat_score=threat_score,
+            sender_email=sender_email,
+            is_spoofed=is_spoofed,
+            urgency_detected=urgency_detected,
+            psychological_triggers=psychological_triggers,
+            flagged_urls=flagged_urls,
+            raw_snippet=raw_snippet,
+            threat_archetype=threat_archetype
         )

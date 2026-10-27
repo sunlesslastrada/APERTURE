@@ -1,25 +1,24 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0b1020">
-  <title>TrustLens AI | Security Dashboard</title>
+  <title>APERTURE | Security Operations Center</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <div class="app-shell">
     <aside class="sidebar">
-      <a class="brand" href="#" aria-label="TrustLens AI home">
+      <a class="brand" href="#" aria-label="APERTURE home">
         <span class="brand-icon">✦</span>
-        <span>TrustLens <span class="brand-ai">AI</span></span>
+        <span>APERTURE <span class="brand-ai">AI</span></span>
       </a>
 
       <p class="nav-label">WORKSPACE</p>
       <nav class="navigation">
         <a class="nav-link active" href="#dashboard">▦ <span>Dashboard</span></a>
-        <a class="nav-link" href="#url-scanner">⌕ <span>URL Scanner</span></a>
+        <a class="nav-link" href="#url-scanner">⌕ <span>URL Sentinel</span></a>
         <a class="nav-link" href="#file-integrity">▤ <span>File Integrity</span></a>
         <a class="nav-link" href="#incidents">◷ <span>Incident History</span></a>
       </nav>
@@ -27,7 +26,7 @@
       <div class="sidebar-bottom">
         <div class="status-indicator"></div>
         <div>
-          <strong>TrustLens AI</strong>
+          <strong>APERTURE</strong>
           <p>Security workspace</p>
         </div>
       </div>
@@ -40,84 +39,85 @@
           <h1>Dashboard</h1>
         </div>
         <div class="profile">
-          <span class="profile-avatar">TL</span>
+          <span class="profile-avatar">AP</span>
           <div>
             <strong>Security Analyst</strong>
-            <p>Local workspace</p>
+            <p>SOC Workspace</p>
           </div>
         </div>
       </header>
 
-      <section class="welcome">
-        <div>
-          <p class="eyebrow">YOUR SECURITY OVERVIEW</p>
-          <h2>Stay ahead of threats.</h2>
-          <p>Monitor suspicious links, file integrity, and security events from one place.</p>
+      <section class="stat-grid">
+        <div class="card stat-card">
+          <p class="stat-label">TOTAL SCANNED</p>
+          <strong class="stat-value" id="total-scans">0</strong>
+          <p class="stat-subtext">Session vector analyses</p>
         </div>
-        <span class="shield-art" aria-hidden="true">⬡</span>
+
+        <div class="card stat-card">
+          <p class="stat-label">SYSTEM HEALTH</p>
+          <strong class="stat-value text-success">Optimal</strong>
+          <p class="stat-subtext">All telemetry services active</p>
+        </div>
+
+        <div class="card stat-card">
+          <p class="stat-label">THREAT DETECTIONS</p>
+          <strong class="stat-value" id="threat-count">0</strong>
+          <p class="stat-subtext">Flagged adversarial payloads</p>
+        </div>
+
+        <div class="card stat-card">
+          <p class="stat-label">ACTIVE MODULES</p>
+          <strong class="stat-value">3</strong>
+          <p class="stat-subtext">DeepScan, Sentinel & Triage</p>
+        </div>
       </section>
 
-      <section class="stats-grid" aria-label="Security statistics">
-        <article class="stat-card">
-          <div class="stat-top"><span>URLs scanned</span><span class="stat-icon blue">⌕</span></div>
-          <h3 id="urls-scanned">0</h3>
-          <p>Session scans</p>
-        </article>
-        <article class="stat-card">
-          <div class="stat-top"><span>Threats detected</span><span class="stat-icon red">!</span></div>
-          <h3 id="threats-detected">0</h3>
-          <p>Flagged in this session</p>
-        </article>
-        <article class="stat-card">
-          <div class="stat-top"><span>Monitored files</span><span class="stat-icon purple">▤</span></div>
-          <h3 id="files-monitored">0</h3>
-          <p>Registered in this session</p>
-        </article>
-        <article class="stat-card">
-          <div class="stat-top"><span>Integrity status</span><span class="stat-icon green">✓</span></div>
-          <h3 class="healthy" id="integrity-status">Not checked</h3>
-          <p>Awaiting a real file check</p>
-        </article>
-      </section>
-
-      <div class="content-grid">
-        <section class="panel scanner-panel" id="url-scanner">
+      <div class="dashboard-grid">
+        <section class="panel" id="url-scanner">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">THREAT PREVENTION</p>
-              <h2>Quick URL Scan</h2>
+              <p class="eyebrow">DOMAIN SENTINEL</p>
+              <h2>Quick URL Check</h2>
             </div>
-            <span class="panel-symbol">↗</span>
+            <span class="badge">Perimeter Sentinel</span>
           </div>
 
-          <p class="muted">Inspect a URL before opening it.</p>
+          <p class="panel-intro">
+            Test destination URLs against homoglyph, typosquatting, and deceptive subdomain heuristics.
+          </p>
 
-          <form id="scan-form">
-            <label for="url-input">Website URL</label>
-            <div class="input-row">
-              <input id="url-input" type="url"
-                placeholder="https://example.com" required>
-              <button type="submit" id="scan-button">Analyze URL <span>→</span></button>
+          <form id="scan-form" class="scan-form">
+            <label class="sr-only" for="url-input">URL to scan</label>
+            <div class="input-wrap">
+              <input
+                id="url-input"
+                name="url"
+                type="text"
+                placeholder="https://example.com"
+                autocomplete="off"
+                spellcheck="false"
+              >
             </div>
+            <button id="scan-button" class="btn btn-primary" type="submit">
+              Scan URL
+            </button>
           </form>
 
-          <p class="demo-notice">Demo mode · No live threat intelligence or ML model is connected.</p>
-          <div id="scan-result" class="result-box" aria-live="polite" hidden></div>
+          <div id="scan-result" class="scan-result hidden" aria-live="polite"></div>
         </section>
 
         <section class="panel" id="file-integrity">
           <div class="panel-heading">
             <div>
-              <p class="eyebrow">EVIDENCE & MONITORING</p>
-              <h2>File Integrity</h2>
+              <p class="eyebrow">SYSTEM VERIFICATION</p>
+              <h2>Telemetry Status</h2>
             </div>
-            <span class="panel-symbol purple-text">⌘</span>
+            <span class="badge">NIST SP 800-61</span>
           </div>
 
-          <div class="integrity-empty">
-            <span class="empty-icon">▤</span>
-            <h3>No file checks yet</h3>
-            <p>File registration and SHA-256 verification will appear here when integrated.</p>
+          <div class="placeholder-box">
+            <p>Vector DeepScan and Domain Sentinel modules operational.</p>
           </div>
           <a class="text-link" href="#incidents">View incident history →</a>
         </section>
@@ -132,13 +132,13 @@
           <span class="live-label"><span></span> SESSION ACTIVITY</span>
         </div>
         <div id="event-list" class="event-list">
-          <div class="event-empty">No scans recorded in this session. Try the demo URL scanner above.</div>
+          <div class="event-empty">No scans recorded in this session. Try the URL scanner above.</div>
         </div>
       </section>
 
       <footer class="footer">
-        <span>TrustLens AI <span class="footer-dot">•</span> Digital Trust & Incident Monitoring</span>
-        <span>Frontend prototype · Demo mode</span>
+        <span>APERTURE <span class="footer-dot">•</span> Threat Intelligence & Incident Remediation</span>
+        <span>Autonomous SOC Platform</span>
       </footer>
     </main>
   </div>
